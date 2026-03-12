@@ -51,7 +51,6 @@ export function SessionGallery({ sessions }: SessionGalleryProps) {
       <section className="gallery-panel">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">Constellation Gallery</p>
             <h2>Available research psyches</h2>
           </div>
         </div>
@@ -71,26 +70,40 @@ export function SessionGallery({ sessions }: SessionGalleryProps) {
                 {(() => {
                   const stateKind = getSessionStateKind(session);
                   return (
-                <div className="session-card-top">
-                  <span className={`badge ${stateKind === "live" ? "badge-live" : stateKind === "reconciled" ? "badge-reconciled" : session.source === "experiment_logs" ? "badge-keep" : "badge-neutral"}`}>
-                    {stateKind === "live" ? "Live" : stateKind === "reconciled" ? "Reconciled" : session.source === "experiment_logs" ? "Canonical" : "Shadow Trace"}
-                  </span>
-                  {session.live?.phase ? <span className="badge badge-outline">{titleCase(session.live.phase)}</span> : null}
-                  <span className="badge badge-outline">{titleCase(session.runnerMode)}</span>
-                </div>
+                    <div className="session-card-top">
+                      <div className="session-card-badge-cluster">
+                        <span
+                          className={`badge ${stateKind === "live" ? "badge-live" : stateKind === "reconciled" ? "badge-reconciled" : session.source === "experiment_logs" ? "badge-keep" : "badge-neutral"}`}
+                        >
+                          {stateKind === "live"
+                            ? "Live"
+                            : stateKind === "reconciled"
+                              ? "Reconciled"
+                              : session.source === "experiment_logs"
+                                ? "Canonical"
+                                : "Shadow Trace"}
+                        </span>
+                        {session.live?.phase ? <span className="badge badge-outline">{titleCase(session.live.phase)}</span> : null}
+                      </div>
+                      <span className="badge badge-outline session-card-mode-badge">{titleCase(session.runnerMode)}</span>
+                    </div>
                   );
                 })()}
 
                 <div className="session-card-copy">
-                  <h3>{session.title}</h3>
-                  <p className="session-branch">{session.branch}</p>
+                  <h3 className="session-branch-heading">
+                    {getBranchSegments(session).map((segment) => (
+                      <span key={`${session.id}-${segment}`} className="session-branch-segment">
+                        {segment}
+                      </span>
+                    ))}
+                  </h3>
                   <p className="session-summary">{truncateText(session.notes, 110)}</p>
                 </div>
 
                 <SessionStateStrip session={session} />
-                <SessionProgress session={session} />
-                {session.knowledgeSummary ? <SessionKnowledgeStrip session={session} /> : null}
-                {session.live?.isActive ? <LiveTelemetryStrip session={session} /> : null}
+                <SessionActivityPanel session={session} />
+                <SessionKnowledgeStrip session={session} />
 
                 <dl className="session-stats">
                   <div>
@@ -134,6 +147,15 @@ function getSessionCurrentIteration(session: SessionGraph): IterationNode | null
     }
   }
   return session.iterations.at(-1) ?? null;
+}
+
+function getBranchSegments(session: SessionGraph): string[] {
+  const source = (session.branch || session.title).trim();
+  const segments = source
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  return segments.length > 0 ? segments : [source || "Unknown"];
 }
 
 function getSessionStateKind(session: SessionGraph): SessionStateKind {
@@ -204,7 +226,11 @@ function SessionStateStrip({ session }: { session: SessionGraph }) {
   );
 }
 
-function SessionProgress({ session }: { session: SessionGraph }) {
+function SessionActivityPanel({ session }: { session: SessionGraph }) {
+  if (!session.live?.isActive) {
+    return <SessionJungianStrip session={session} />;
+  }
+
   const currentProgress = getCurrentRunProgress(session);
   const overallProgress = getOverallProgress(session, currentProgress);
   const liveIteration = session.live?.currentIterationLabel
@@ -212,39 +238,44 @@ function SessionProgress({ session }: { session: SessionGraph }) {
     : session.iterations.at(-1) ?? null;
 
   return (
-    <div className="progress-stack">
-      <div className="progress-row">
-        <div className="progress-copy">
-          <span className="progress-label">Current run</span>
-          <strong>{Math.round(currentProgress)}%</strong>
-        </div>
-        <span className="progress-meta">
-          {session.live?.isActive
-            ? liveIteration
+    <section className="session-focus-panel session-focus-panel-live">
+      <div className="session-focus-top">
+        <span className="session-focus-title">Live passage</span>
+        <span className="session-focus-meta">{titleCase(session.live?.phase, "Preparing")}</span>
+      </div>
+      <div className="progress-stack">
+        <div className="progress-row">
+          <div className="progress-copy">
+            <span className="progress-label">Current run</span>
+            <strong>{Math.round(currentProgress)}%</strong>
+          </div>
+          <span className="progress-meta">
+            {liveIteration
               ? `Moment ${liveIteration.label} • ${titleCase(liveIteration.moveType, "Attitude")}`
-              : titleCase(session.live?.phase, "Preparing")
-            : "Historical trace"}
-        </span>
-      </div>
-      <div className="progress-bar">
-        <span className="progress-fill" style={{ width: `${currentProgress}%` }} />
-      </div>
-
-      <div className="progress-row progress-row-compact">
-        <div className="progress-copy">
-          <span className="progress-label">Session scope</span>
-          <strong>{Math.round(overallProgress)}%</strong>
+              : titleCase(session.live?.phase, "Preparing")}
+          </span>
         </div>
-        <span className="progress-meta">
-          {session.live?.experimentIndex && session.live?.experimentCount
-            ? `Experiment ${session.live.experimentIndex}/${session.live.experimentCount}`
-            : `${session.stats.iterationCount} archived moments`}
-        </span>
+        <div className="progress-bar">
+          <span className="progress-fill" style={{ width: `${currentProgress}%` }} />
+        </div>
+
+        <div className="progress-row progress-row-compact">
+          <div className="progress-copy">
+            <span className="progress-label">Session scope</span>
+            <strong>{Math.round(overallProgress)}%</strong>
+          </div>
+          <span className="progress-meta">
+            {session.live?.experimentIndex && session.live?.experimentCount
+              ? `Experiment ${session.live.experimentIndex}/${session.live.experimentCount}`
+              : `${session.stats.iterationCount} archived moments`}
+          </span>
+        </div>
+        <div className="progress-bar progress-bar-subtle">
+          <span className="progress-fill progress-fill-scope" style={{ width: `${overallProgress}%` }} />
+        </div>
       </div>
-      <div className="progress-bar progress-bar-subtle">
-        <span className="progress-fill progress-fill-scope" style={{ width: `${overallProgress}%` }} />
-      </div>
-    </div>
+      {session.live?.progress ? <LiveTelemetryStrip session={session} /> : <p className="session-focus-note">Telemetry will appear here as the current vessel begins to report.</p>}
+    </section>
   );
 }
 
@@ -284,11 +315,11 @@ function SessionKnowledgeStrip({ session }: { session: SessionGraph }) {
     <dl className="session-knowledge-strip">
       <div>
         <dt>Anchor</dt>
-        <dd>{anchor ? `${anchor.iterationLabel} • ${formatMetric(anchor.valBpb, 6)}` : "Forming"}</dd>
+        <dd>{anchor ? `${anchor.iterationLabel} • ${formatMetric(anchor.valBpb, 6)}` : session.source === "experiment_logs" ? "Forming" : "Shadow-only"}</dd>
       </div>
       <div>
         <dt>Counter-pole</dt>
-        <dd>{opposing ? opposing.iterationLabel : "Not yet selected"}</dd>
+        <dd>{opposing ? opposing.iterationLabel : session.source === "experiment_logs" ? "Not yet selected" : "No dialectic memory"}</dd>
       </div>
       <div>
         <dt>Lineage</dt>
@@ -299,6 +330,50 @@ function SessionKnowledgeStrip({ session }: { session: SessionGraph }) {
         <dd>{session.strongestCounterexamples.length} candidate{session.strongestCounterexamples.length === 1 ? "" : "s"}</dd>
       </div>
     </dl>
+  );
+}
+
+function SessionJungianStrip({ session }: { session: SessionGraph }) {
+  const anchor = session.knowledgeSummary?.latestAnchor;
+  const opposing = session.knowledgeSummary?.latestOpposing;
+  const complexes = Math.max(session.stats.activeTensionCount, session.tensions.length);
+  const counterPoles = Math.max(
+    session.strongestCounterexamples.length,
+    session.knowledgeSummary?.defaultTensionPairsWithOpposition ?? 0,
+  );
+
+  return (
+    <section className="session-focus-panel session-focus-panel-memory">
+      <div className="session-focus-top">
+        <span className="session-focus-title">Psychic contour</span>
+        <span className="session-focus-meta">{session.source === "experiment_logs" ? "Historical psyche" : "Shadow trace"}</span>
+      </div>
+      <dl className="session-jungian-strip">
+        <div>
+          <dt>Complexes</dt>
+          <dd>{complexes}</dd>
+        </div>
+        <div>
+          <dt>Dissonances</dt>
+          <dd>{session.stats.contradictionCount}</dd>
+        </div>
+        <div>
+          <dt>Integrations</dt>
+          <dd>{session.stats.keptCount}</dd>
+        </div>
+        <div>
+          <dt>Counter-poles</dt>
+          <dd>{counterPoles}</dd>
+        </div>
+      </dl>
+      <p className="session-focus-note">
+        {anchor
+          ? `Anchor ${anchor.iterationLabel} at ${formatMetric(anchor.valBpb, 6)} remains the retained line${opposing ? ` against ${opposing.iterationLabel}.` : "."}`
+          : session.source === "experiment_logs"
+            ? "This constellation has memory, but no stable anchor has been retained yet."
+            : "This shadow trace has no canonical dialectical memory yet."}
+      </p>
+    </section>
   );
 }
 
