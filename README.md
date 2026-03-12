@@ -39,6 +39,170 @@ uv run train.py
 
 If the above commands all work ok, your setup is working and you can go into autonomous research mode.
 
+## Remote CUDA execution
+
+If your local machine is not CUDA-capable, you can keep the repo here and execute experiments on a remote NVIDIA box over SSH. This repo now includes [`scripts/remote_runner.py`](scripts/remote_runner.py), which:
+
+- pushes your current experiment branch and has the remote machine clone that branch from the configured repo
+- bootstraps `uv` and `uv sync` on the remote machine
+- optionally runs `prepare.py` remotely if the cache is missing
+- executes `train.py` remotely
+- copies `run.log` back to the local repo so the existing workflow can read results normally
+
+The remote SSH target is configured through `--host` / `--remote-dir` or through `.env`:
+
+- `AUTORESEARCH_REMOTE_HOST`
+- `AUTORESEARCH_REMOTE_DIR`
+
+Typical usage:
+
+```bash
+# One-time remote bootstrap
+python3 scripts/remote_runner.py setup
+
+# Run one remote experiment and copy run.log back locally
+python3 scripts/remote_runner.py run --bootstrap
+
+# Check the remote environment without running a training job
+python3 scripts/remote_runner.py status
+```
+
+After a remote run completes, the fetched log is available locally as `run.log`, and archived copies are written under `remote_runs/`.
+
+Before the first experiment run, the helper creates a local `autoresearch/<date>-<hour><minute>` branch if you are not already on an `autoresearch/` branch. It commits all non-ignored local changes before deploying so the remote machine always runs an actual git clone, then commits any additional non-ignored post-run changes and pushes the current branch to the repo target implied by `AUTORESEARCH_REPO` (or `origin` if unset). This happens on the local machine, not on the remote host, so either your local git credentials or `RUNPOD_SSH_PRIVATE_KEY` must already be configured.
+
+The remote clone source comes from `AUTORESEARCH_REPO` in `.env`. You can set it either as a GitHub slug such as `smysnk/autoresearch` or as a full git URL. If omitted, the runners fall back to the local `origin` remote and convert GitHub SSH remotes to HTTPS for cloning. In practice, `AUTORESEARCH_REPO` should point at the same repository you expect the branch pushes to land in.
+
+If the repository is private, set `RUNPOD_SSH_PRIVATE_KEY` in `.env` to a local SSH private key path. The runners use that single key for the local branch push, remote SSH/SCP transport, and remote machine or Runpod Pod `git clone` / `git fetch` operations. For GitHub slugs and GitHub URLs, enabling this key makes the remote clone switch to `git@github.com:...` automatically.
+
+For the plain SSH remote runner, you also need:
+
+- `AUTORESEARCH_REMOTE_HOST`
+- `AUTORESEARCH_REMOTE_DIR`
+
+## Runpod execution
+
+If you want the repo to provision an ephemeral Runpod Pod, run the workload there, collect artifacts locally, and tear the Pod down afterwards, use `scripts/runpod_runner.py`.
+
+High-level flow:
+
+- create a Pod through the Runpod REST API
+- wait for public IP + SSH to come up
+- push the current experiment branch, then have the Pod clone that branch from the configured repo
+- bootstrap `uv`, dependencies, and dataset cache on the Pod
+- run `train.py`
+- poll the Pod, copy intermediate artifacts back locally, and save Pod metadata snapshots
+- terminate the Pod when the run finishes
+
+Each execution gets its own local folder under `runpod_runs/<execution-id>/` with:
+
+- `reports/` — committable performance outputs such as `run.log`, `results.tsv`, and summarized run metadata
+- `metadata/` — API requests, Pod snapshots, and raw orchestration state (ignored by git)
+- `logs/` — orchestrator and bootstrap logs (ignored by git)
+- `artifacts/` — copied-back raw remote artifacts, including crash/debug files (ignored by git)
+
+Setup:
+
+```bash
+# 1. Review profiles.json to see the built-in numbered Runpod profiles
+
+# 2. Copy .env.example to .env and fill in your repo, shared SSH key,
+#    Runpod API key, desired profile, and how many full executions you want to run
+cp .env.example .env
+
+# 3. Optional: create runpod.json if you want to override the default Pod settings
+
+# 4. Make sure the public half of your SSH key is added to your Runpod account
+#    and that RUNPOD_SSH_PRIVATE_KEY points at the matching private key.
+#    That same key is reused for private repo access.
+```
+
+Run one full execution:
+
+```bash
+python3 scripts/runpod_runner.py execute --config runpod.json
+```
+
+By default this will terminate the Pod at the end. Pass `--keep-pod` if you want to leave it running for debugging.
+
+Before the first Runpod experiment, the runner creates a local `autoresearch/<date>-<hour><minute>` branch if you are not already on one. Before each experiment it commits all non-ignored local changes, pushes the branch to the repo target implied by `AUTORESEARCH_REPO` (or `origin` if unset), and then has the Pod clone that branch from the configured repo. After each experiment it commits any additional non-ignored changes and pushes the current branch again. This happens from the local orchestrator after artifacts are collected, so either your local git credentials or `RUNPOD_SSH_PRIVATE_KEY` must already be configured.
+
+After each Runpod experiment, the runner still retrieves the full remote artifact set into `artifacts/`, plus the orchestration logs and Pod metadata into `logs/` and `metadata/`. It also copies the committable subset into `reports/`, which is the only Runpod output directory left visible to git.
+
+Preview the current best GPU candidates without launching a Pod:
+
+```bash
+python3 scripts/runpod_runner.py resolve-gpu --config runpod.json
+```
+
+List the built-in numbered profiles:
+
+```bash
+python3 scripts/runpod_runner.py profiles
+```
+
+Recommended profiles for the current repo:
+
+1. `1` — 80GB Stable.
+   Intended GPU classes: `NVIDIA H100 80GB HBM3`, `NVIDIA H100 PCIe`, `NVIDIA A100 80GB PCIe`, `NVIDIA A100-SXM4-80GB`, `NVIDIA H100 NVL`.
+   This is the default recommendation for baseline runs and modest experimentation because it provides enough headroom for the current baseline without jumping straight to the most expensive hardware.
+
+2. `2` — 96GB+ Premium.
+   Intended GPU classes: `NVIDIA H200`, `NVIDIA H200 NVL`, `NVIDIA RTX PRO 6000 Blackwell Server Edition`, `NVIDIA RTX PRO 6000 Blackwell Workstation Edition`, `NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition`.
+   Use this when you want to minimize OOM risk or push more aggressive architectural changes.
+
+The profile GPU classes are based on the current official Runpod GPU catalog. The actual Pod choice remains market-driven because the runner scores only GPUs that are currently available and within your configured price window. The checked-in profile catalog lives in `profiles.json`.
+
+The config supports three GPU selection modes:
+
+- Direct API-native selection: set `gpu_type_ids` to the exact Runpod GPU type IDs you want, and optionally set `gpu_type_priority`.
+- Memory-driven selection: leave `gpu_type_ids` empty and set `gpu_requirements.min_memory_gb`. The runner will resolve that into an ordered `gpuTypeIds` list locally using the published Runpod GPU catalog, then send that list to the Pod API.
+- Numbered profile: set `RUNPOD_PROFILE=<number>` in `.env`, pass `--profile <number>`, or set `profile` in `runpod.json`. This applies the matching preset from `profiles.json`.
+- Value heuristic: leave `gpu_type_ids` empty and set `gpu_value_heuristic`. The runner will query the current Runpod GPU market, filter by your price and memory ranges, score candidates by stock status, price, and memory fit, then submit the ranked list with `gpuTypePriority=custom`.
+
+If the live Runpod GraphQL market lookup is unavailable, the runner falls back to a REST-only catalog path. In that mode it still applies memory bounds and preferred profile ordering from `profiles.json`, but it cannot enforce live price or stock filters.
+
+You can also pass through host resource constraints that map directly to the Pod API:
+
+- `min_ram_per_gpu_gb` -> `minRAMPerGPU`
+- `min_vcpu_per_gpu` -> `minVCPUPerGPU`
+- `gpu_type_priority` -> `gpuTypePriority`
+
+The value heuristic uses:
+
+- `min_price_per_gpu_hour` / `max_price_per_gpu_hour`
+- `min_memory_gb` / `max_memory_gb`
+- `preferred_gpu_type_ids` / `excluded_gpu_type_ids`
+- `stock_weight`, `price_weight`, `memory_weight`
+
+The ranked candidate list and the chosen ordering are saved into the execution folder under `metadata/gpu-candidates.json` and `metadata/gpu-selection.json`.
+
+Typical minimal setup is:
+
+```bash
+# .env
+AUTORESEARCH_REPO=smysnk/autoresearch
+AUTORESEARCH_REMOTE_HOST=your-user@your-host
+AUTORESEARCH_REMOTE_DIR=/path/to/autoresearch
+RUNPOD_API_KEY=...
+RUNPOD_PROFILE=1
+RUNPOD_EXPERIMENT_COUNT=1
+RUNPOD_SSH_PRIVATE_KEY=~/.ssh/id_rsa
+```
+
+`RUNPOD_EXPERIMENT_COUNT` controls how many sequential Runpod executions to launch when you run `python3 scripts/runpod_runner.py execute`. Each execution still gets its own folder under `runpod_runs/`. If you set it above `1`, the runner also writes a batch summary folder under `runpod_runs/`, with its committable batch summary under `reports/`. The default is `1`.
+
+An optional `runpod.json` can still override the Pod defaults, for example:
+
+```json
+{
+  "profile": 1,
+  "experiment_count": 3,
+  "name_prefix": "autoresearch",
+  "remote_base_dir": "/root/autoresearch"
+}
+```
+
 ## Running the agent
 
 Simply spin up your Claude/Codex or whatever you want in this repo (and disable all permissions), then you can prompt something like:
@@ -55,6 +219,9 @@ The `program.md` file is essentially a super lightweight "skill".
 prepare.py      — constants, data prep + runtime utilities (do not modify)
 train.py        — model, optimizer, training loop (agent modifies this)
 program.md      — agent instructions
+scripts/remote_runner.py — optional remote deploy + run helper
+scripts/runpod_runner.py — Runpod Pod lifecycle runner
+profiles.json    — built-in numbered Runpod profiles
 pyproject.toml  — dependencies
 ```
 

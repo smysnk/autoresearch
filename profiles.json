@@ -1,0 +1,54 @@
+{
+  "1": {
+    "profile_id": 1,
+    "name": "80GB Stable",
+    "description": "Default recommendation for baseline runs and modest architectural exploration.",
+    "rationale": "80 GB-class GPUs provide materially more headroom for the baseline and near-term experiments while still staying within commonly available Runpod stock.",
+    "gpu_value_heuristic": {
+      "min_price_per_gpu_hour": 0.5,
+      "max_price_per_gpu_hour": 5.0,
+      "min_memory_gb": 80,
+      "max_memory_gb": 94,
+      "preferred_gpu_type_ids": [
+        "NVIDIA H100 80GB HBM3",
+        "NVIDIA H100 PCIe",
+        "NVIDIA A100 80GB PCIe",
+        "NVIDIA A100-SXM4-80GB",
+        "NVIDIA H100 NVL"
+      ],
+      "excluded_gpu_type_ids": [],
+      "stock_weight": 0.55,
+      "price_weight": 0.25,
+      "memory_weight": 0.2
+    },
+    "min_ram_per_gpu_gb": 24,
+    "min_vcpu_per_gpu": 8,
+    "gpu_type_priority": "custom"
+  },
+  "2": {
+    "profile_id": 2,
+    "name": "96GB+ Premium",
+    "description": "High-headroom profile for aggressive experimentation and reduced OOM risk.",
+    "rationale": "The current Runpod catalog includes 96 GB, 141 GB, and 143 GB classes. This profile prioritizes those when budget allows.",
+    "gpu_value_heuristic": {
+      "min_price_per_gpu_hour": 1.0,
+      "max_price_per_gpu_hour": 10.0,
+      "min_memory_gb": 96,
+      "max_memory_gb": 143,
+      "preferred_gpu_type_ids": [
+        "NVIDIA H200",
+        "NVIDIA H200 NVL",
+        "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+        "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+        "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition"
+      ],
+      "excluded_gpu_type_ids": [],
+      "stock_weight": 0.55,
+      "price_weight": 0.2,
+      "memory_weight": 0.25
+    },
+    "min_ram_per_gpu_gb": 32,
+    "min_vcpu_per_gpu": 8,
+    "gpu_type_priority": "custom"
+  }
+}

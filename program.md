@@ -6,22 +6,27 @@ This is an experiment to have the LLM do its own research.
 
 To set up a new experiment, work with the user to:
 
-1. **Agree on a run tag**: propose a tag based on today's date (e.g. `mar5`). The branch `autoresearch/<tag>` must not already exist — this is a fresh run.
+1. **Agree on a run tag**: propose a tag based on today's date and time (e.g. `mar5-1430`). The branch `autoresearch/<tag>` must not already exist — this is a fresh run.
 2. **Create the branch**: `git checkout -b autoresearch/<tag>` from current master.
 3. **Read the in-scope files**: The repo is small. Read these files for full context:
    - `README.md` — repository context.
    - `prepare.py` — fixed constants, data prep, tokenizer, dataloader, evaluation. Do not modify.
    - `train.py` — the file you modify. Model architecture, optimizer, training loop.
-4. **Verify data exists**: Check that `~/.cache/autoresearch/` contains data shards and a tokenizer. If not, tell the human to run `uv run prepare.py`.
+4. **Verify the execution target**:
+   - local execution: Check that `~/.cache/autoresearch/` contains data shards and a tokenizer. If not, tell the human to run `uv run prepare.py`.
+   - remote execution: Confirm the SSH target is reachable. `python3 scripts/remote_runner.py setup` will prepare the remote cache if it is missing.
 5. **Initialize results.tsv**: Create `results.tsv` with just the header row. The baseline will be recorded after the first run.
 6. **Initialize research_journal.tsv**: Create `research_journal.tsv` with just the header row. This is an untracked scratchpad for predictions, contradictions, and synthesis notes.
-7. **Confirm and go**: Confirm setup looks good.
+7. **Optional remote bootstrap**: If the experiments should run on a remote CUDA machine, run `python3 scripts/remote_runner.py setup`. This pushes the current experiment branch and has the remote host clone it from the configured repo, bootstraps `uv`, prepares data if needed, and keeps the execution environment there. The fetched `run.log` will still appear locally after each run.
+8. **Confirm and go**: Confirm setup looks good.
 
 Once you get confirmation, kick off the experimentation.
 
 ## Experimentation
 
 Each experiment runs on a single GPU. The training script runs for a **fixed time budget of 5 minutes** (wall clock training time, excluding startup/compilation). You launch it simply as: `uv run train.py`.
+
+If you are using the remote runner, launch experiments with `python3 scripts/remote_runner.py run --bootstrap` instead. It pushes your local experiment branch, has the remote machine clone that branch from the configured repo, executes `train.py` there, and copies `run.log` back to the local repo so the rest of the loop stays the same.
 
 **What you CAN do:**
 - Modify `train.py` — this is the only file you edit. Everything is fair game: model architecture, optimizer, hyperparameters, training loop, batch size, model size, etc.
@@ -187,7 +192,7 @@ Keep `results.tsv` compact and canonical. Put the reasoning trace in `research_j
 
 ## The experiment loop
 
-The experiment runs on a dedicated branch (e.g. `autoresearch/mar5` or `autoresearch/mar5-gpu0`).
+The experiment runs on a dedicated branch (e.g. `autoresearch/mar5-1430` or `autoresearch/mar5-1430-gpu0`).
 
 LOOP FOREVER:
 
@@ -197,7 +202,10 @@ LOOP FOREVER:
 4. Write a one-sentence prediction in `research_journal.tsv`.
 5. Tune `train.py` with an experimental idea by directly hacking the code.
 6. git commit
-7. Run the experiment: `uv run train.py > run.log 2>&1` (redirect everything — do NOT use tee or let output flood your context)
+7. Run the experiment:
+   - local CUDA: `uv run train.py > run.log 2>&1`
+   - remote CUDA: `python3 scripts/remote_runner.py run --bootstrap`
+   In both cases, make sure the current run leaves a local `run.log` behind. Do NOT use tee or let output flood your context.
 8. Read out the results: `grep "^val_bpb:\|^peak_vram_mb:" run.log`
 9. If the grep output is empty, the run crashed. Run `tail -n 50 run.log` to read the Python stack trace and attempt a fix. If you can't get things to work after more than a few attempts, give up.
 10. Record the outcome in `research_journal.tsv`: confirmed / contradicted / mixed, the contradicted assumption if any, the active tension, and the next move type.

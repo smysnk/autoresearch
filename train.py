@@ -16,12 +16,35 @@ from dataclasses import dataclass, asdict
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.attention import SDPBackend, sdpa_kernel
 
-from kernels import get_kernel
 cap = torch.cuda.get_device_capability()
-# varunneal's FA3 is Hopper only, use kernels-community on non-Hopper GPUs
-repo = "varunneal/flash-attention-3" if cap == (9, 0) else "kernels-community/flash-attn3"
-fa3 = get_kernel(repo).flash_attn_interface
+ATTENTION_BACKEND = os.environ.get("AUTORESEARCH_ATTENTION_BACKEND")
+if ATTENTION_BACKEND is None:
+    # kernels-community/flash-attn3 works on current Hopper/Ampere/Ada targets here,
+    # but Blackwell (sm_120) needs a fallback until compatible kernels are available.
+    ATTENTION_BACKEND = "sdpa" if cap[0] >= 12 else "flash"
+assert ATTENTION_BACKEND in {"flash", "sdpa"}
+USE_MODEL_COMPILE = ATTENTION_BACKEND == "flash"
+SDPA_FULL_WINDOW_BACKENDS = [
+    SDPBackend.FLASH_ATTENTION,
+    SDPBackend.CUDNN_ATTENTION,
+    SDPBackend.EFFICIENT_ATTENTION,
+    SDPBackend.MATH,
+]
+SDPA_MASKED_BACKENDS = [
+    SDPBackend.CUDNN_ATTENTION,
+    SDPBackend.EFFICIENT_ATTENTION,
+    SDPBackend.MATH,
+]
+
+flash_attn = None
+if ATTENTION_BACKEND == "flash":
+    from kernels import get_kernel
+
+    # varunneal's FA3 is Hopper only, use kernels-community on non-Hopper GPUs
+    repo = "varunneal/flash-attention-3" if cap == (9, 0) else "kernels-community/flash-attn3"
+    flash_attn = get_kernel(repo).flash_attn_interface
 
 from prepare import MAX_SEQ_LEN, TIME_BUDGET, Tokenizer, make_dataloader, evaluate_bpb
 
@@ -58,6 +81,15 @@ def apply_rotary_emb(x, cos, sin):
     return torch.cat([y1, y2], 3)
 
 
+def make_causal_window_mask(sequence_len, window_size, device):
+    q_idx = torch.arange(sequence_len, device=device)[:, None]
+    k_idx = torch.arange(sequence_len, device=device)[None, :]
+    mask = k_idx <= q_idx
+    if window_size >= 0:
+        mask = mask & (k_idx >= q_idx - window_size + 1)
+    return mask
+
+
 class CausalSelfAttention(nn.Module):
     def __init__(self, config, layer_idx):
         super().__init__()
@@ -73,6 +105,10 @@ class CausalSelfAttention(nn.Module):
         self.c_proj = nn.Linear(self.n_embd, self.n_embd, bias=False)
         self.ve_gate_channels = 32
         self.ve_gate = nn.Linear(self.ve_gate_channels, self.n_kv_head, bias=False) if has_ve(layer_idx, config.n_layer) else None
+        self.use_flash_attn = ATTENTION_BACKEND == "flash"
+        if not self.use_flash_attn:
+            short_mask = make_causal_window_mask(config.sequence_len, config.sequence_len // 2, device="cpu")
+            self.register_buffer("short_window_mask", short_mask, persistent=False)
 
     def forward(self, x, ve, cos_sin, window_size):
         B, T, C = x.size()
@@ -90,7 +126,23 @@ class CausalSelfAttention(nn.Module):
         q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)
         q, k = norm(q), norm(k)
 
-        y = fa3.flash_attn_func(q, k, v, causal=True, window_size=window_size)
+        if self.use_flash_attn:
+            y = flash_attn.flash_attn_func(q, k, v, causal=True, window_size=window_size)
+        else:
+            q = q.transpose(1, 2)
+            k = k.transpose(1, 2)
+            v = v.transpose(1, 2)
+            if self.n_kv_head != self.n_head:
+                repeat = self.n_head // self.n_kv_head
+                k = k.repeat_interleave(repeat, dim=1)
+                v = v.repeat_interleave(repeat, dim=1)
+            attn_mask = None
+            if window_size[0] < T:
+                attn_mask = self.short_window_mask[:T, :T].to(device=q.device)
+            sdpa_backends = SDPA_FULL_WINDOW_BACKENDS if attn_mask is None else SDPA_MASKED_BACKENDS
+            with sdpa_kernel(backends=sdpa_backends):
+                y = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, is_causal=attn_mask is None)
+            y = y.transpose(1, 2)
         y = y.contiguous().view(B, T, -1)
         y = self.c_proj(y)
         return y
@@ -461,6 +513,7 @@ torch.set_float32_matmul_precision("high")
 device = torch.device("cuda")
 autocast_ctx = torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16)
 H100_BF16_PEAK_FLOPS = 989.5e12
+print(f"Attention backend: {ATTENTION_BACKEND} (cuda capability {cap[0]}.{cap[1]})")
 
 tokenizer = Tokenizer.from_directory()
 vocab_size = tokenizer.get_vocab_size()
@@ -505,7 +558,10 @@ optimizer = model.setup_optimizer(
     weight_decay=WEIGHT_DECAY,
 )
 
-model = torch.compile(model, dynamic=False)
+if USE_MODEL_COMPILE:
+    model = torch.compile(model, dynamic=False)
+else:
+    print("Skipping torch.compile for model on SDPA fallback backend")
 
 train_loader = make_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train")
 x, y, epoch = next(train_loader)  # prefetch first batch

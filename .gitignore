@@ -20,4 +20,13 @@ AGENTS.md
 dev/
 
 # Results file
-results.tsv
+/results.tsv
+/research_journal.tsv
+/run.log
+remote_runs/
+# Keep only curated Runpod reports under runpod_runs/*/reports/
+runpod_runs/*/artifacts/
+runpod_runs/*/logs/
+runpod_runs/*/metadata/
+runpod.json
+.env
