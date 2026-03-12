@@ -1,0 +1,22 @@
+{
+  "antithesis_source": {
+    "path": "train.py",
+    "type": "current"
+  },
+  "antithesis_summary": "Remove value embeddings entirely and let plain attention plus residual mixing do the work.",
+  "antithesis_train_py": "iterations/003/tensions/value-embeddings-vs-simplicity/antithesis/train.py",
+  "created_in_iteration": 3,
+  "favored_side": "thesis",
+  "id": "value-embeddings-vs-simplicity",
+  "kind": "novelty-vs-simplicity",
+  "label": "Value embeddings vs simplicity",
+  "schema_version": 1,
+  "thesis_source": {
+    "path": "experiment_logs/codex-transcendent-fn-mar12-0755/iterations/001/actual/train.py",
+    "type": "path"
+  },
+  "thesis_summary": "Keep alternating value embeddings because the current best completed run used them and may have gained extra information flow per token.",
+  "thesis_train_py": "iterations/003/tensions/value-embeddings-vs-simplicity/thesis/train.py",
+  "updated_in_iteration": 3,
+  "why_active": "The incumbent spends roughly one third of its parameters on alternating value embeddings, and the March 12, 2026 branch-local no-VE attempt aborted before training, so this mechanism still lacks a clean empirical opposition inside the 300-second budget."
+}

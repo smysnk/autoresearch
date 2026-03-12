@@ -13,6 +13,8 @@ from pathlib import Path
 DEFAULT_PROGRAM_PATH = "program.md"
 DEFAULT_CODEX_EXECUTABLE = "codex"
 DEFAULT_STATE_PATH = "research_state/current_iteration.json"
+DEFAULT_PREPARE_TIMEOUT_SECONDS = 240
+DEFAULT_REFLECT_TIMEOUT_SECONDS = 180
 
 
 def _env_flag(name: str, default: bool) -> bool:
@@ -20,6 +22,22 @@ def _env_flag(name: str, default: bool) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _env_optional_int(name: str, default: int | None) -> int | None:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    value = raw.strip()
+    if not value:
+        return default
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise SystemExit(f"{name} must be an integer number of seconds") from exc
+    if parsed <= 0:
+        return None
+    return parsed
 
 
 @dataclass(frozen=True)
@@ -31,6 +49,14 @@ class CodexAgentConfig:
     bypass_sandbox: bool
     program_path: Path
     state_path: Path
+    prepare_timeout_seconds: int | None
+    reflect_timeout_seconds: int | None
+
+
+@dataclass(frozen=True)
+class CodexPhaseResult:
+    returncode: int | None
+    timed_out: bool
 
 
 def phase_output_paths(
@@ -58,6 +84,14 @@ def load_codex_agent_config(repo_root: Path) -> CodexAgentConfig:
         bypass_sandbox=_env_flag("AUTORESEARCH_CODEX_BYPASS_SANDBOX", True),
         program_path=program_path,
         state_path=state_path,
+        prepare_timeout_seconds=_env_optional_int(
+            "AUTORESEARCH_CODEX_PREPARE_TIMEOUT_SECONDS",
+            DEFAULT_PREPARE_TIMEOUT_SECONDS,
+        ),
+        reflect_timeout_seconds=_env_optional_int(
+            "AUTORESEARCH_CODEX_REFLECT_TIMEOUT_SECONDS",
+            DEFAULT_REFLECT_TIMEOUT_SECONDS,
+        ),
     )
 
 
@@ -98,6 +132,7 @@ def build_codex_phase_prompt(
     experiment_index: int,
     phase: str,
     baseline_run: bool,
+    knowledge_suggestion: dict[str, object] | None = None,
     run_log_path: Path | None = None,
     summary_path: Path | None = None,
     execution_dir: Path | None = None,
@@ -145,6 +180,38 @@ def build_codex_phase_prompt(
                 [
                     "- Use the latest local session logs and reports to choose the next move.",
                     "- Preserve the Jungian method: active tensions, contradiction tracking, and a concrete transcendent-function candidate when appropriate.",
+                ]
+            )
+        if knowledge_suggestion is not None:
+            lines.extend(
+                [
+                    "",
+                    "Knowledge-base suggestion for this prepare step:",
+                    f"- Anchor experiment: {knowledge_suggestion.get('anchor_experiment_id') or 'none available yet'}",
+                ]
+            )
+            anchor_val_bpb = knowledge_suggestion.get("anchor_val_bpb")
+            if anchor_val_bpb is not None:
+                lines.append(f"- Anchor val_bpb: {anchor_val_bpb}")
+            anchor_takeaway = knowledge_suggestion.get("anchor_takeaway")
+            if anchor_takeaway:
+                lines.append(f"- Anchor takeaway: {anchor_takeaway}")
+            lines.append(
+                f"- Suggested opposing experiment: {knowledge_suggestion.get('opposing_experiment_id') or 'no credible opposite found yet'}"
+            )
+            opposing_takeaway = knowledge_suggestion.get("opposing_takeaway")
+            if opposing_takeaway:
+                lines.append(f"- Opposing takeaway: {opposing_takeaway}")
+            selection_reason = knowledge_suggestion.get("selection_reason")
+            if selection_reason:
+                lines.append(f"- Why this pair: {selection_reason}")
+            transcendent_prediction = knowledge_suggestion.get("transcendent_prediction")
+            if transcendent_prediction:
+                lines.append(f"- Suggested transcendent move: {transcendent_prediction}")
+            lines.extend(
+                [
+                    "- Carry the chosen historical pair into the state file using knowledge_anchor_experiment_id, knowledge_opposing_experiment_id, knowledge_selection_reason, and knowledge_transcendent_prediction.",
+                    "- You may override the suggested opposing experiment, but if you do, update those fields to match your chosen pair and explain why in the state.",
                 ]
             )
         lines.extend(
@@ -195,12 +262,13 @@ def run_codex_phase(
     log_path: Path,
     output_path: Path,
     baseline_run: bool = False,
+    knowledge_suggestion: dict[str, object] | None = None,
     run_log_path: Path | None = None,
     summary_path: Path | None = None,
     execution_dir: Path | None = None,
-) -> None:
+) -> CodexPhaseResult:
     if not cfg.enabled:
-        return
+        return CodexPhaseResult(returncode=0, timed_out=False)
 
     prompt = build_codex_phase_prompt(
         cfg=cfg,
@@ -209,6 +277,7 @@ def run_codex_phase(
         experiment_index=experiment_index,
         phase=phase,
         baseline_run=baseline_run,
+        knowledge_suggestion=knowledge_suggestion,
         run_log_path=run_log_path,
         summary_path=summary_path,
         execution_dir=execution_dir,
@@ -234,13 +303,35 @@ def run_codex_phase(
     if cfg.profile:
         cmd[2:2] = ["-p", cfg.profile]
 
+    timeout_seconds = cfg.prepare_timeout_seconds if phase == "prepare" else cfg.reflect_timeout_seconds
     with log_path.open("w") as fh:
-        subprocess.run(
+        proc = subprocess.Popen(
             cmd,
             cwd=repo_root,
-            input=prompt,
             text=True,
-            check=True,
+            stdin=subprocess.PIPE,
             stdout=fh,
             stderr=subprocess.STDOUT,
         )
+        try:
+            proc.communicate(prompt, timeout=timeout_seconds)
+            returncode = proc.returncode
+        except subprocess.TimeoutExpired:
+            fh.write(
+                f"\n[runner] Codex {phase} phase timed out after {timeout_seconds} seconds. "
+                "Terminating the subprocess and continuing with the files already staged.\n"
+            )
+            fh.flush()
+            proc.terminate()
+            try:
+                proc.communicate(timeout=10)
+                returncode = proc.returncode
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.communicate(timeout=10)
+                returncode = proc.returncode
+            return CodexPhaseResult(returncode=returncode, timed_out=True)
+
+    if returncode != 0:
+        raise subprocess.CalledProcessError(returncode, cmd)
+    return CodexPhaseResult(returncode=returncode, timed_out=False)

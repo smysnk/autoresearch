@@ -1,0 +1,21 @@
+--- before/train.py
++++ after/train.py
+@@ -141,8 +141,8 @@
+ 
+ 
+ def has_ve(layer_idx, n_layer):
+-    """Returns True if layer should have Value Embedding (alternating, last always included)."""
+-    return layer_idx % 2 == (n_layer - 1) % 2
++    """Returns whether this run enables value embeddings for the layer."""
++    return USE_VALUE_EMBEDDINGS and layer_idx % 2 == (n_layer - 1) % 2
+ 
+ 
+ def apply_rotary_emb(x, cos, sin):
+@@ -558,6 +558,7 @@
+ ASPECT_RATIO = 64       # model_dim = depth * ASPECT_RATIO
+ HEAD_DIM = 128          # target head dimension for attention
+ WINDOW_PATTERN = "SSSL" # sliding window pattern: L=full, S=half context
++USE_VALUE_EMBEDDINGS = False # toggle alternating value embeddings on/off
+ 
+ # Optimization
+ TOTAL_BATCH_SIZE = 2**19 # ~524K tokens per optimizer step

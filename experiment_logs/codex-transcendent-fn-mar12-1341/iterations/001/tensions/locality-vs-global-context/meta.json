@@ -1,0 +1,21 @@
+{
+  "antithesis_source": {
+    "type": "inline"
+  },
+  "antithesis_summary": "Use full-window attention throughout because long-range coverage matters more than extra step count.",
+  "antithesis_train_py": "iterations/001/tensions/locality-vs-global-context/antithesis/train.py",
+  "created_in_iteration": 1,
+  "favored_side": "thesis",
+  "id": "locality-vs-global-context",
+  "kind": "inductive-bias-vs-coverage",
+  "label": "Locality vs global context",
+  "schema_version": 1,
+  "thesis_source": {
+    "path": "train.py",
+    "type": "current"
+  },
+  "thesis_summary": "Preserve the mostly short-window pattern because it buys throughput while keeping some global context alive.",
+  "thesis_train_py": "iterations/001/tensions/locality-vs-global-context/thesis/train.py",
+  "updated_in_iteration": 1,
+  "why_active": "WINDOW_PATTERN='SSSL' already assumes mostly local attention with periodic full-context refresh, but that may be too lossy for 2048-token sequences."
+}

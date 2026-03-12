@@ -1,0 +1,21 @@
+{
+  "antithesis_source": {
+    "type": "inline"
+  },
+  "antithesis_summary": "Reduce early optimizer aggression and add warmup to trade some speed for cleaner convergence.",
+  "antithesis_train_py": "iterations/001/tensions/aggression-vs-stability/antithesis/train.py",
+  "created_in_iteration": 1,
+  "favored_side": "thesis",
+  "id": "aggression-vs-stability",
+  "kind": "optimization-speed-vs-stability",
+  "label": "Aggression vs stability",
+  "schema_version": 1,
+  "thesis_source": {
+    "path": "train.py",
+    "type": "current"
+  },
+  "thesis_summary": "Keep the aggressive short-horizon optimizer settings because the five-minute budget rewards fast initial movement.",
+  "thesis_train_py": "iterations/001/tensions/aggression-vs-stability/thesis/train.py",
+  "updated_in_iteration": 1,
+  "why_active": "The current schedule uses EMBEDDING_LR=0.6, SCALAR_LR=0.5, and zero warmup, which may maximize short-run adaptation but could also waste early steps on noise."
+}

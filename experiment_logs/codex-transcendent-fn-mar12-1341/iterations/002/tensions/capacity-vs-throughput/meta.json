@@ -1,0 +1,21 @@
+{
+  "antithesis_source": {
+    "type": "inline"
+  },
+  "antithesis_summary": "Spend some of the simplicity dividend on more ordinary depth, even if that costs throughput.",
+  "antithesis_train_py": "iterations/002/tensions/capacity-vs-throughput/antithesis/train.py",
+  "created_in_iteration": 2,
+  "favored_side": "thesis",
+  "id": "capacity-vs-throughput",
+  "kind": "capacity-vs-throughput",
+  "label": "Capacity vs throughput",
+  "schema_version": 1,
+  "thesis_source": {
+    "path": "experiment_logs/codex-transcendent-fn-mar12-0755/iterations/001/actual/train.py",
+    "type": "path"
+  },
+  "thesis_summary": "Keep the proven 8-layer scale because short-run step count may dominate modest capacity gains.",
+  "thesis_train_py": "iterations/002/tensions/capacity-vs-throughput/thesis/train.py",
+  "updated_in_iteration": 2,
+  "why_active": "The incumbent already leaves substantial VRAM headroom, but its strong result may still come more from reaching 938 steps and 491.8M tokens than from its nominal parameter count."
+}

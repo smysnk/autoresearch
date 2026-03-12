@@ -89,6 +89,7 @@ export function SessionGallery({ sessions }: SessionGalleryProps) {
 
                 <SessionStateStrip session={session} />
                 <SessionProgress session={session} />
+                {session.knowledgeSummary ? <SessionKnowledgeStrip session={session} /> : null}
                 {session.live?.isActive ? <LiveTelemetryStrip session={session} /> : null}
 
                 <dl className="session-stats">
@@ -270,6 +271,32 @@ function LiveTelemetryStrip({ session }: { session: SessionGraph }) {
       <div>
         <dt>VRAM</dt>
         <dd>{formatMemoryGb(progress.currentVramMb)}</dd>
+      </div>
+    </dl>
+  );
+}
+
+function SessionKnowledgeStrip({ session }: { session: SessionGraph }) {
+  const anchor = session.knowledgeSummary?.latestAnchor;
+  const opposing = session.knowledgeSummary?.latestOpposing;
+
+  return (
+    <dl className="session-knowledge-strip">
+      <div>
+        <dt>Anchor</dt>
+        <dd>{anchor ? `${anchor.iterationLabel} • ${formatMetric(anchor.valBpb, 6)}` : "Forming"}</dd>
+      </div>
+      <div>
+        <dt>Counter-pole</dt>
+        <dd>{opposing ? opposing.iterationLabel : "Not yet selected"}</dd>
+      </div>
+      <div>
+        <dt>Lineage</dt>
+        <dd>{session.incumbentLineage.length} retained memory{session.incumbentLineage.length === 1 ? "" : " traces"}</dd>
+      </div>
+      <div>
+        <dt>Opposition</dt>
+        <dd>{session.strongestCounterexamples.length} candidate{session.strongestCounterexamples.length === 1 ? "" : "s"}</dd>
       </div>
     </dl>
   );

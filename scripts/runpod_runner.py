@@ -43,6 +43,7 @@ from codex_agent import (
     phase_output_paths,
     run_codex_phase,
 )
+from knowledge_base import rebuild_knowledge_base, seed_state_with_knowledge_suggestion
 from live_monitor import capture_codex_phase_artifacts, snapshot_phase_inputs
 
 
@@ -862,10 +863,16 @@ def has_nonignored_changes(repo_root: Path) -> bool:
     return bool(result.stdout.strip())
 
 
-def commit_nonignored_changes(repo_root: Path, message: str) -> str | None:
-    if not has_nonignored_changes(repo_root):
+def commit_nonignored_changes(repo_root: Path, message: str, *, pathspecs: list[str] | None = None) -> str | None:
+    if pathspecs is None and not has_nonignored_changes(repo_root):
         return None
-    run_local(["git", "add", "-A"], cwd=repo_root)
+    if pathspecs:
+        normalized = [pathspec for pathspec in pathspecs if pathspec]
+        if not normalized:
+            return None
+        run_local(["git", "add", "-A", "-f", "--", *normalized], cwd=repo_root)
+    else:
+        run_local(["git", "add", "-A"], cwd=repo_root)
     diff = subprocess.run(
         ["git", "diff", "--cached", "--quiet"],
         cwd=repo_root,
@@ -1709,7 +1716,7 @@ def execute_on_pod(
             experiment_index=iteration_log.iteration,
             phase="reflect",
         )
-        run_codex_phase(
+        reflect_phase_result = run_codex_phase(
             repo_root=repo_root,
             cfg=codex_cfg,
             runner_mode="runpod",
@@ -1722,6 +1729,22 @@ def execute_on_pod(
             summary_path=paths.metadata_dir / "summary.json",
             execution_dir=paths.execution_dir,
         )
+        if reflect_phase_result.timed_out:
+            append_live_event(
+                session_log,
+                {
+                    "timestamp": iso_now(),
+                    "type": "reflect_timeout",
+                    "iteration_label": iteration_log.iteration_label,
+                    "state_path": str(codex_cfg.state_path.relative_to(repo_root))
+                    if codex_cfg.state_path.exists()
+                    else None,
+                },
+            )
+        if not codex_cfg.state_path.exists():
+            raise SystemExit(
+                f"Codex reflect did not leave {codex_cfg.state_path} behind; aborting result capture."
+            )
         reflect_live_dir = live_phase_dir(session_log, iteration_label=iteration_log.iteration_label, phase="reflect")
         reflect_manifest = capture_codex_phase_artifacts(
             repo_root=repo_root,
@@ -1820,9 +1843,27 @@ def execute_on_pod(
             status="completed" if exit_code == 0 else "failed",
         )
         finalized_iteration = True
+        knowledge_summary = rebuild_knowledge_base(
+            repo_root,
+            repo_root / "knowledge_base",
+            suggestion_session_id=session_log.session_id,
+        )
+        append_log(
+            log_path,
+            "knowledge base rebuilt after reflect: "
+            f"records={knowledge_summary.get('record_count')} "
+            f"pairs={knowledge_summary.get('tension_pair_count')}",
+        )
         post_commit = commit_nonignored_changes(
             repo_root,
             f"experiment {experiment_index:03d}: complete Runpod run on {branch} (val_bpb {summary.get('val_bpb', 'unknown')})",
+            pathspecs=[
+                "train.py",
+                str(codex_cfg.state_path.relative_to(repo_root)),
+                "knowledge_base",
+                str(iteration_log.session.session_dir.relative_to(repo_root)),
+                str(paths.reports_dir.relative_to(repo_root)),
+            ],
         )
         if post_commit is not None:
             append_log(log_path, f"committed post-run changes: {post_commit}")
@@ -1861,6 +1902,11 @@ def execute_on_pod(
                 summary=summary,
                 status="failed",
             )
+            rebuild_knowledge_base(
+                repo_root,
+                repo_root / "knowledge_base",
+                suggestion_session_id=session_log.session_id,
+            )
 
 
 def execute(args: argparse.Namespace) -> int:
@@ -1894,6 +1940,13 @@ def execute(args: argparse.Namespace) -> int:
             baseline_run = not bool(manifest.get("iterations", []))
             session_iteration = int(manifest.get("latest_iteration") or 0) + 1
             iteration_label = f"{session_iteration:03d}"
+            knowledge_summary = rebuild_knowledge_base(
+                repo_root,
+                repo_root / "knowledge_base",
+                suggestion_session_id=session_log.session_id,
+            )
+            knowledge_suggestion = knowledge_summary.get("prepare_suggestion")
+            seed_state_with_knowledge_suggestion(codex_cfg.state_path, knowledge_suggestion)
             write_live_state(
                 session_log,
                 build_live_state_payload(
@@ -1926,7 +1979,7 @@ def execute(args: argparse.Namespace) -> int:
                 phase="prepare",
             )
             prepare_before_snapshot = snapshot_phase_inputs(repo_root)
-            run_codex_phase(
+            prepare_phase_result = run_codex_phase(
                 repo_root=repo_root,
                 cfg=codex_cfg,
                 runner_mode="runpod",
@@ -1936,7 +1989,25 @@ def execute(args: argparse.Namespace) -> int:
                 log_path=prepare_log_path,
                 output_path=prepare_output_path,
                 baseline_run=baseline_run,
+                knowledge_suggestion=knowledge_suggestion,
             )
+            if prepare_phase_result.timed_out:
+                print(f"Codex prepare timed out; continuing with {codex_cfg.state_path}")
+                append_live_event(
+                    session_log,
+                    {
+                        "timestamp": iso_now(),
+                        "type": "prepare_timeout",
+                        "iteration_label": iteration_label,
+                        "state_path": str(codex_cfg.state_path.relative_to(repo_root))
+                        if codex_cfg.state_path.exists()
+                        else None,
+                    },
+                )
+            if not codex_cfg.state_path.exists():
+                raise SystemExit(
+                    f"Codex prepare did not leave {codex_cfg.state_path} behind; aborting before deployment."
+                )
             prepare_live_dir = live_phase_dir(session_log, iteration_label=iteration_label, phase="prepare")
             prepare_manifest = capture_codex_phase_artifacts(
                 repo_root=repo_root,
@@ -1976,6 +2047,10 @@ def execute(args: argparse.Namespace) -> int:
             pre_commit = commit_nonignored_changes(
                 repo_root,
                 f"experiment {experiment_index:03d}: prepare Runpod deployment on {branch}",
+                pathspecs=[
+                    "train.py",
+                    str(codex_cfg.state_path.relative_to(repo_root)),
+                ],
             )
             if pre_commit is not None:
                 print(f"committed local changes before Runpod run: {pre_commit}")

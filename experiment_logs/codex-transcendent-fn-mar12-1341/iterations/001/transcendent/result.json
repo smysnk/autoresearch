@@ -1,0 +1,13 @@
+{
+  "antithesis_ref": "value-embeddings-vs-simplicity:antithesis",
+  "concrete_change": "Disable value embeddings, raise DEPTH from 8 to 10, and keep WINDOW_PATTERN=\"SSSL\" plus the same total batch budget.",
+  "emergent_thought": "If throughput really is the scarce resource, the cleanest way to buy more capacity may be to remove value-embedding complexity before adding layers.",
+  "result_status": "proposed",
+  "schema_version": 1,
+  "source_tension_ids": [
+    "capacity-vs-throughput",
+    "value-embeddings-vs-simplicity"
+  ],
+  "tested_in_iteration": false,
+  "thesis_ref": "capacity-vs-throughput:thesis"
+}

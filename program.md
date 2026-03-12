@@ -209,6 +209,10 @@ Before each run, make sure the state file contains:
 - `prediction`
 - `move_type`
 - `why_now`
+- `knowledge_anchor_experiment_id`
+- `knowledge_opposing_experiment_id`
+- `knowledge_selection_reason`
+- `knowledge_transcendent_prediction`
 - `thesis`
 - `antithesis`
 - `synthesis_candidate`
@@ -227,6 +231,8 @@ The runner will convert that into:
 - thesis / antithesis `train.py` snapshots
 - transcendent-function artifacts
 - execution summaries and run logs
+
+The runner may pre-seed the `knowledge_*` fields using the distilled experiment memory. Treat that as a suggested anchor/opposition pair, not an order. If a better opposite emerges from the current local evidence, override the suggestion and keep the final state honest.
 
 Your responsibility is to keep the structured state honest and specific enough that a later visualizer can reconstruct the movement of the research psyche at that moment.
 

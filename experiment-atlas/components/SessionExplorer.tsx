@@ -18,6 +18,7 @@ import type {
   CodeSnapshot,
   CodexPhaseArtifact,
   IterationNode,
+  KnowledgeExperimentLink,
   LiveReflectionState,
   SessionGraph,
   TensionNode,
@@ -32,7 +33,16 @@ type SessionExplorerProps = {
   focusTensionId?: string;
 };
 
-type InspectorTab = "metrics" | "plan" | "result" | "code" | "diff" | "tensions" | "transcendent" | "execution";
+type InspectorTab =
+  | "metrics"
+  | "plan"
+  | "result"
+  | "knowledge"
+  | "code"
+  | "diff"
+  | "tensions"
+  | "transcendent"
+  | "execution";
 
 const VIEW_OPTIONS: { id: VisualMode; label: string; description: string }[] = [
   { id: "chronicle", label: "Individuation Chronicle", description: "Metric timeline and moment-by-moment narrative" },
@@ -49,6 +59,7 @@ const INSPECTOR_TABS: InspectorTab[] = [
   "metrics",
   "plan",
   "result",
+  "knowledge",
   "code",
   "diff",
   "tensions",
@@ -60,6 +71,7 @@ const INSPECTOR_TAB_LABELS: Record<InspectorTab, string> = {
   metrics: "Metrics",
   plan: "Plan",
   result: "Integration",
+  knowledge: "Memory",
   code: "Embodied Code",
   diff: "Patch",
   tensions: "Complexes",
@@ -71,6 +83,7 @@ const INSPECTOR_TAB_DESCRIPTIONS: Record<InspectorTab, string> = {
   metrics: "Expanded metrics, vessel stats, and artifact context for the selected moment.",
   plan: "Prediction, preparation moves, and the staged Codex intervention before the run.",
   result: "Integrated outcome, reflected meaning, and post-run interpretation.",
+  knowledge: "Distilled takeaways, anchor provenance, counterexamples, and the predicted transcendent image.",
   code: "The exact embodied train.py that animated this moment.",
   diff: "Mutation patch showing what changed relative to the prior state.",
   tensions: "Structured complexes captured for the current moment.",
@@ -103,6 +116,108 @@ function laneForMoveType(moveType: string | null): "thesis" | "synthesis" | "ant
 
 function encodeQueryValue(value: string): string {
   return encodeURIComponent(value);
+}
+
+function compactArtifactPath(value: string | null | undefined, maxSegments = 4): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.replaceAll("\\", "/");
+  const segments = normalized.split("/").filter(Boolean);
+  if (segments.length <= maxSegments) {
+    return normalized;
+  }
+
+  return `.../${segments.slice(-maxSegments).join("/")}`;
+}
+
+function experimentHref(link: KnowledgeExperimentLink | null): string | null {
+  if (!link) {
+    return null;
+  }
+  return `/session/${encodeQueryValue(link.sessionId)}/iteration/${encodeQueryValue(link.iterationLabel)}`;
+}
+
+function experimentHandle(link: KnowledgeExperimentLink | null): string {
+  if (!link) {
+    return "No experiment selected";
+  }
+  return `${link.sessionId}:${link.iterationLabel}`;
+}
+
+function valueWithFallback(value: string | number | null | undefined, fallback = "n/a"): string {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? String(value) : fallback;
+  }
+  return value ?? fallback;
+}
+
+function dedupeKnowledgeLinks(links: KnowledgeExperimentLink[]): KnowledgeExperimentLink[] {
+  const seen = new Set<string>();
+  const deduped: KnowledgeExperimentLink[] = [];
+  for (const link of links) {
+    if (seen.has(link.experimentId)) {
+      continue;
+    }
+    seen.add(link.experimentId);
+    deduped.push(link);
+  }
+  return deduped;
+}
+
+function knowledgeLinkFromIteration(session: SessionGraph, iteration: IterationNode): KnowledgeExperimentLink | null {
+  if (!iteration.knowledgeRef) {
+    return null;
+  }
+
+  return {
+    experimentId: iteration.id,
+    sessionId: session.id,
+    iteration: iteration.iteration,
+    iterationLabel: iteration.label,
+    branch: session.branch,
+    title: session.title,
+    sessionPath: session.sourcePath,
+    sourceIterationPath: iteration.sourcePath,
+    knowledgeRef: iteration.knowledgeRef,
+    valBpb: iteration.metrics.valBpb,
+    keepDiscardStatus: iteration.keepDiscardStatus,
+    outcome: iteration.outcome,
+    takeaway: iteration.takeaway,
+    confidence: iteration.confidence,
+    evidenceStrength: iteration.evidenceStrength,
+    axisTags: iteration.axisTags,
+    mechanismTags: iteration.mechanismTags,
+  };
+}
+
+function getKnowledgeLineage(session: SessionGraph, selectedIteration: IterationNode): KnowledgeExperimentLink[] {
+  const lineage: KnowledgeExperimentLink[] = [];
+  for (const iteration of session.iterations) {
+    if (iteration.iteration > selectedIteration.iteration) {
+      break;
+    }
+    if (iteration.isIncumbentCandidate) {
+      const selfLink = knowledgeLinkFromIteration(session, iteration);
+      if (selfLink) {
+        lineage.push(selfLink);
+      }
+    }
+    if (iteration.knowledgeAnchor) {
+      lineage.push(iteration.knowledgeAnchor);
+    }
+  }
+
+  return dedupeKnowledgeLinks(lineage);
+}
+
+function getCounterexampleView(session: SessionGraph, selectedIteration: IterationNode): KnowledgeExperimentLink[] {
+  return dedupeKnowledgeLinks([
+    ...(selectedIteration.knowledgeOpposing ? [selectedIteration.knowledgeOpposing] : []),
+    ...selectedIteration.opposingExperiments,
+    ...session.strongestCounterexamples,
+  ]);
 }
 
 function splitHeroTitle(title: string): { prefix: string | null; focus: string } {
@@ -387,7 +502,7 @@ export function SessionExplorer({
         <div className="hero-actions">
           <Link className="button-link hero-action-card hero-action-atlas" href="/">
             <span className="hero-action-kicker">Atlas</span>
-            <strong>All constellations</strong>
+            <strong>Atlas field</strong>
             <span className="hero-action-meta">Return to the wider field</span>
           </Link>
           <Link
@@ -1215,26 +1330,32 @@ function CounterfactualMirrorView({
       <div className="mirror-grid">
         <MirrorColumn
           title="Thesis"
+          heading="Dominant premise"
           subtitle={selectedTension?.label ?? "Current dominant attitude"}
           tone="mirror-thesis"
           summary={selectedTension?.whyActive}
+          codeTitle="Embodied train.py"
           code={selectedTension?.thesis}
         />
 
         <MirrorColumn
           title="Synthesis"
+          heading="Emergent third image"
           subtitle={`Moment ${mirror.iteration.label}`}
           tone="mirror-synthesis"
           summary={mirror.artifact?.emergentThought ?? mirror.iteration.summaryText ?? mirror.iteration.prediction}
+          codeTitle={mirror.artifact?.code ? "Synthesis candidate" : "Embodied train.py"}
           code={mirror.artifact?.code ?? mirror.iteration.actualCode}
           footer={`Status: ${titleCase(mirror.artifact?.resultStatus ?? mirror.iteration.outcome, "Observed")}`}
         />
 
         <MirrorColumn
           title="Antithesis"
-          subtitle={selectedTension?.kind ?? "Opposing pole"}
+          heading="Counter-pole"
+          subtitle={selectedTension?.label ?? "Opposing pole"}
           tone="mirror-antithesis"
           summary={selectedTension?.favoredSide ? `Favored side: ${selectedTension.favoredSide}` : selectedTension?.whyActive}
+          codeTitle="Counter train.py"
           code={selectedTension?.antithesis}
         />
       </div>
@@ -1244,27 +1365,36 @@ function CounterfactualMirrorView({
 
 function MirrorColumn({
   title,
+  heading,
   subtitle,
   summary,
   code,
+  codeTitle,
   footer,
   tone,
 }: {
   title: string;
+  heading: string;
   subtitle: string;
   summary: string | null | undefined;
   code: CodeSnapshot | null | undefined;
+  codeTitle: string;
   footer?: string;
   tone: string;
 }) {
   return (
     <article className={`mirror-column ${tone}`}>
       <div className="mirror-column-heading">
-        <p className="eyebrow">{title}</p>
-        <h3>{subtitle}</h3>
+        <div className="mirror-column-topline">
+          <p className="eyebrow mirror-column-badge">{title}</p>
+          <span className="mirror-column-context" title={subtitle}>
+            {subtitle}
+          </span>
+        </div>
+        <h3>{heading}</h3>
       </div>
       <p className="mirror-column-copy">{valueOrFallback(summary)}</p>
-      <CodePanel title={code?.label ?? "Code"} snapshot={code ?? null} compact />
+      <CodePanel title={codeTitle} snapshot={code ?? null} compact />
       {footer ? <p className="mirror-footer">{footer}</p> : null}
     </article>
   );
@@ -1756,6 +1886,93 @@ function InspectorPanel({
     );
   }
 
+  if (tab === "knowledge") {
+    const knowledgeLineage = getKnowledgeLineage(session, iteration);
+    const counterexamples = getCounterexampleView(session, iteration);
+
+    return (
+      <div className="inspector-content">
+        <div className="note-grid">
+          <NarrativeCard title="Distilled takeaway" body={iteration.takeaway ?? iteration.summaryText} tone="accent-synthesis" />
+          <NarrativeCard title="Mechanism hypothesis" body={iteration.mechanismHypothesis} tone="accent-thesis" />
+          <NarrativeCard title="Why this pair" body={iteration.knowledgeSelectionReason} tone="accent-antithesis" />
+          <NarrativeCard
+            title="Predicted transcendent image"
+            body={iteration.knowledgeTranscendentPrediction ?? iteration.transcendent?.emergentThought}
+            tone="accent-synthesis"
+          />
+        </div>
+
+        <div className="knowledge-reference-grid">
+          <KnowledgeReferenceCard
+            eyebrow="Knowledge anchor"
+            link={iteration.knowledgeAnchor ?? session.knowledgeSummary?.latestAnchor ?? null}
+            tone="accent-thesis"
+            emptyMessage="No incumbent anchor has been chosen yet."
+          />
+          <KnowledgeReferenceCard
+            eyebrow="Opposing experiment"
+            link={iteration.knowledgeOpposing}
+            tone="accent-antithesis"
+            emptyMessage="No credible counter-pole exists yet. The memory is preserving uncertainty rather than inventing opposition."
+          />
+        </div>
+
+        <dl className="detail-list">
+          <div>
+            <dt>Knowledge record</dt>
+            <dd>{compactArtifactPath(iteration.knowledgeRef, 5) ?? "n/a"}</dd>
+          </div>
+          <div>
+            <dt>Confidence</dt>
+            <dd>{titleCase(iteration.confidence, "Not set")}</dd>
+          </div>
+          <div>
+            <dt>Evidence strength</dt>
+            <dd>{iteration.evidenceStrength !== null ? formatMetric(iteration.evidenceStrength, 2) : "n/a"}</dd>
+          </div>
+          <div>
+            <dt>Contradiction class</dt>
+            <dd>{valueOrFallback(iteration.contradictionClass)}</dd>
+          </div>
+          <div>
+            <dt>Incumbent role</dt>
+            <dd>
+              {iteration.isIncumbentCandidate
+                ? `Candidate${iteration.incumbentRank !== null ? ` #${valueWithFallback(iteration.incumbentRank)}` : ""}`
+                : "Not an incumbent candidate"}
+            </dd>
+          </div>
+          <div>
+            <dt>Support / oppose</dt>
+            <dd>{iteration.supportingExperiments.length} support • {iteration.opposingExperiments.length} oppose</dd>
+          </div>
+          <div>
+            <dt>Shared axes</dt>
+            <dd>{iteration.defaultTensionPair?.sharedAxes.join(", ") || "None yet"}</dd>
+          </div>
+          <div>
+            <dt>Opposed axes</dt>
+            <dd>{iteration.defaultTensionPair?.opposedAxes.join(", ") || "None yet"}</dd>
+          </div>
+        </dl>
+
+        <KnowledgeCollection
+          title="Incumbent lineage"
+          items={knowledgeLineage}
+          emptyMessage="No lineage has been established for this session yet."
+          tone="accent-thesis"
+        />
+        <KnowledgeCollection
+          title="Strongest counterexamples"
+          items={counterexamples}
+          emptyMessage="No historically grounded counterexample has accumulated enough opposition signal yet."
+          tone="accent-antithesis"
+        />
+      </div>
+    );
+  }
+
   if (tab === "code") {
     return (
       <div className="inspector-content">
@@ -1869,6 +2086,114 @@ function NarrativeCard({
   );
 }
 
+function KnowledgeReferenceCard({
+  eyebrow,
+  link,
+  tone,
+  emptyMessage,
+}: {
+  eyebrow: string;
+  link: KnowledgeExperimentLink | null;
+  tone: string;
+  emptyMessage: string;
+}) {
+  if (!link) {
+    return (
+      <article className={`knowledge-reference-card ${tone}`}>
+        <p className="eyebrow">{eyebrow}</p>
+        <h3>Not yet selected</h3>
+        <p className="muted">{emptyMessage}</p>
+      </article>
+    );
+  }
+
+  const href = experimentHref(link);
+
+  return (
+    <article className={`knowledge-reference-card ${tone}`}>
+      <div className="knowledge-reference-top">
+        <div>
+          <p className="eyebrow">{eyebrow}</p>
+          <h3>{experimentHandle(link)}</h3>
+        </div>
+        <span className="badge badge-outline">{formatMetric(link.valBpb, 6)}</span>
+      </div>
+      <p className="knowledge-reference-takeaway">{valueOrFallback(link.takeaway)}</p>
+      <dl className="detail-list compact-detail-list">
+        <div>
+          <dt>Confidence</dt>
+          <dd>{titleCase(link.confidence, "Not set")}</dd>
+        </div>
+        <div>
+          <dt>Evidence</dt>
+          <dd>{link.evidenceStrength !== null ? formatMetric(link.evidenceStrength, 2) : "n/a"}</dd>
+        </div>
+        <div>
+          <dt>Knowledge ref</dt>
+          <dd>{compactArtifactPath(link.knowledgeRef, 5) ?? "n/a"}</dd>
+        </div>
+      </dl>
+      {href ? (
+        <Link className="knowledge-link-chip" href={href}>
+          Open moment
+        </Link>
+      ) : null}
+    </article>
+  );
+}
+
+function KnowledgeCollection({
+  title,
+  items,
+  emptyMessage,
+  tone,
+}: {
+  title: string;
+  items: KnowledgeExperimentLink[];
+  emptyMessage: string;
+  tone: string;
+}) {
+  return (
+    <section className="panel-block">
+      <div className="panel-block-top">
+        <h3>{title}</h3>
+        <span className={`badge ${items.length ? "badge-outline" : "badge-neutral"}`}>{items.length}</span>
+      </div>
+      {items.length ? (
+        <div className="knowledge-collection">
+          {items.map((item) => {
+            const href = experimentHref(item);
+            const content = (
+              <>
+                <div className="knowledge-collection-top">
+                  <strong>{experimentHandle(item)}</strong>
+                  <span>{formatMetric(item.valBpb, 6)}</span>
+                </div>
+                <p>{truncateText(item.takeaway, 120)}</p>
+                <span className={`knowledge-tone-chip ${tone}`}>{titleCase(item.confidence, "Unknown")}</span>
+              </>
+            );
+
+            return href ? (
+              <Link key={item.experimentId} href={href} className="knowledge-mini-card">
+                {content}
+              </Link>
+            ) : (
+              <article key={item.experimentId} className="knowledge-mini-card">
+                {content}
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="empty-state">
+          <p>{emptyMessage}</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function MetricDatum({ label, value }: { label: string; value: string }) {
   return (
     <div className="datum-card">
@@ -1959,11 +2284,17 @@ function CodePanel({
   snapshot: CodeSnapshot | null;
   compact?: boolean;
 }) {
+  const pathLabel = compactArtifactPath(snapshot?.path);
+
   return (
     <section className="panel-block">
-      <div className="panel-block-top">
+      <div className="panel-block-top code-panel-top">
         <h3>{title}</h3>
-        {snapshot?.path ? <span className="muted">{snapshot.path}</span> : null}
+        {snapshot?.path ? (
+          <span className="muted code-panel-path" title={snapshot.path}>
+            {pathLabel}
+          </span>
+        ) : null}
       </div>
       <pre className={`code-frame ${compact ? "code-frame-compact" : ""}`}>
         <code>{snapshot?.content ?? "No code artifact captured."}</code>

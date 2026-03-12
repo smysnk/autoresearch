@@ -1,0 +1,12 @@
+{
+  "description": "Distilled experiment knowledge derived from canonical experiment_logs.",
+  "files": {
+    "experiments.jsonl": "Flat index of all distilled experiment records.",
+    "experiments/<session-id>/<iteration>.json": "Per-iteration distilled experiment knowledge record.",
+    "incumbents.json": "Current best-known experiments across global, session, and axis views.",
+    "sessions/<session-id>.json": "Session-level knowledge summaries.",
+    "tensions.jsonl": "Generated default tension pairs with anchor/opposition scoring."
+  },
+  "generated_at": "2026-03-12T21:34:20Z",
+  "schema_version": 1
+}

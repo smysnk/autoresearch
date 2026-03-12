@@ -1,0 +1,113 @@
+--- before/research_state/current_iteration.json
++++ after/research_state/current_iteration.json
+@@ -0,0 +1,110 @@
++{
++  "prediction": "Keeping the current 8-layer `SSSL` mixed-window Muon+AdamW baseline unchanged should reproduce a val_bpb around 0.996 because the only drift since the successful 2026-03-12 baseline is telemetry, not training behavior, so the same capacity-throughput balance should still exploit the 5-minute budget well.",
++  "move_type": "exploit",
++  "why_now": "This is experiment 1 on branch codex/transcendent/fn-mar12-1341, there is no branch-local contradiction history yet, and the runner requires a baseline measurement of the current behaviorally unchanged train.py before targeted negation or synthesis.",
++  "thesis": "On this 5-minute harness, a moderately sized model with mixed local/global attention and split Muon+AdamW optimization is likely already close to the right baseline tradeoff.",
++  "antithesis": "The current baseline may still be paying too much for compromise mechanisms and too little for plain capacity or fuller context coverage.",
++  "synthesis_candidate": "If the baseline is solid, the next synthesis should delete one novelty tax and reallocate that budget into slightly more plain transformer capacity rather than stacking more mechanisms.",
++  "active_tensions": [
++    {
++      "id": "capacity-vs-throughput",
++      "label": "Capacity vs throughput",
++      "kind": "capacity-vs-throughput",
++      "why_active": "The fixed 300-second budget rewards step count, but the current roughly 50M-parameter model may still be under-capacity for ClimbMix.",
++      "favored_side": "thesis",
++      "thesis": {
++        "summary": "Keep DEPTH at 8 with aspect-ratio sizing so the run maximizes tokens processed and optimizer updates.",
++        "source": {
++          "type": "current"
++        }
++      },
++      "antithesis": {
++        "summary": "Spend more of the budget on depth even if that lowers throughput.",
++        "source": {
++          "type": "inline",
++          "text": "# Capacity-heavy alternative\nDEPTH = 10\nDEVICE_BATCH_SIZE = 96\n"
++        }
++      }
++    },
++    {
++      "id": "locality-vs-global-context",
++      "label": "Locality vs global context",
++      "kind": "inductive-bias-vs-coverage",
++      "why_active": "WINDOW_PATTERN='SSSL' already assumes mostly local attention with periodic full-context refresh, but that may be too lossy for 2048-token sequences.",
++      "favored_side": "thesis",
++      "thesis": {
++        "summary": "Preserve the mostly short-window pattern because it buys throughput while keeping some global context alive.",
++        "source": {
++          "type": "current"
++        }
++      },
++      "antithesis": {
++        "summary": "Use full-window attention throughout because long-range coverage matters more than extra step count.",
++        "source": {
++          "type": "inline",
++          "text": "# Global-context alternative\nWINDOW_PATTERN = \"LLLL\"\n"
++        }
++      }
++    },
++    {
++      "id": "value-embeddings-vs-simplicity",
++      "label": "Value embeddings vs simplicity",
++      "kind": "novelty-vs-simplicity",
++      "why_active": "Alternating value embeddings and gates add parameters, memory, and implementation surface; they may help routing, or they may just be a costly flourish in a short run.",
++      "favored_side": "thesis",
++      "thesis": {
++        "summary": "Keep alternating value embeddings because they may improve information flow without paying for full extra layers.",
++        "source": {
++          "type": "current"
++        }
++      },
++      "antithesis": {
++        "summary": "Remove value embeddings entirely and rely on plain attention/residual structure.",
++        "source": {
++          "type": "inline",
++          "text": "# Simpler attention alternative\ndef has_ve(layer_idx, n_layer):\n    return False\n"
++        }
++      }
++    },
++    {
++      "id": "aggression-vs-stability",
++      "label": "Aggression vs stability",
++      "kind": "optimization-speed-vs-stability",
++      "why_active": "The current schedule uses EMBEDDING_LR=0.6, SCALAR_LR=0.5, and zero warmup, which may maximize short-run adaptation but could also waste early steps on noise.",
++      "favored_side": "thesis",
++      "thesis": {
++        "summary": "Keep the aggressive short-horizon optimizer settings because the five-minute budget rewards fast initial movement.",
++        "source": {
++          "type": "current"
++        }
++      },
++      "antithesis": {
++        "summary": "Reduce early optimizer aggression and add warmup to trade some speed for cleaner convergence.",
++        "source": {
++          "type": "inline",
++          "text": "# Conservative schedule alternative\nEMBEDDING_LR = 0.3\nSCALAR_LR = 0.25\nWARMUP_RATIO = 0.05\nWEIGHT_DECAY = 0.1\n"
++        }
++      }
++    }
++  ],
++  "transcendent": {
++    "source_tension_ids": [
++      "capacity-vs-throughput",
++      "value-embeddings-vs-simplicity"
++    ],
++    "thesis_ref": "capacity-vs-throughput:thesis",
++    "antithesis_ref": "value-embeddings-vs-simplicity:antithesis",
++    "emergent_thought": "If throughput really is the scarce resource, the cleanest way to buy more capacity may be to remove value-embedding complexity before adding layers.",
++    "concrete_change": "Disable value embeddings, raise DEPTH from 8 to 10, and keep WINDOW_PATTERN=\"SSSL\" plus the same total batch budget.",
++    "tested_in_iteration": false,
++    "result_status": "proposed"
++  },
++  "result": {
++    "outcome": null,
++    "contradicted_assumption": null,
++    "keep_discard_status": null,
++    "framing_diagnosis": null,
++    "next_move_type": null,
++    "summary_text": null
++  }
++}

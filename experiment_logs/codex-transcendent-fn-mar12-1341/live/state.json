@@ -1,0 +1,48 @@
+{
+  "branch": "codex/transcendent/fn-mar12-1341",
+  "current_iteration_label": "003",
+  "execution_dir": "/Users/josh/play/autoresearch/runpod_runs/20260312T212212Z-autoresearch",
+  "execution_id": "20260312T212212Z-autoresearch",
+  "experiment_count": 1,
+  "experiment_index": 1,
+  "is_active": false,
+  "phase": "completed",
+  "prepare": {
+    "captured_at": "2026-03-12T21:22:12Z",
+    "changed_count": 1,
+    "last_message_path": null,
+    "modified_files": [
+      "research_state/current_iteration.json"
+    ],
+    "patches": [
+      {
+        "patch_path": "patches/research_state__current_iteration.json.diff.patch",
+        "path": "research_state/current_iteration.json",
+        "status": "modified"
+      }
+    ],
+    "phase": "prepare",
+    "state_path": "current_iteration.json",
+    "summary": null,
+    "transcript_path": "transcript.log"
+  },
+  "reflect": {
+    "captured_at": "2026-03-12T21:34:19Z",
+    "changed_count": 0,
+    "last_message_path": null,
+    "modified_files": [],
+    "patches": [],
+    "phase": "reflect",
+    "state_path": "current_iteration.json",
+    "summary": null,
+    "transcript_path": "transcript.log"
+  },
+  "relay_state_path": "/Users/josh/play/autoresearch/runpod_runs/20260312T212212Z-autoresearch/artifacts/live/relay-state.json",
+  "run_log_path": "/Users/josh/play/autoresearch/runpod_runs/20260312T212212Z-autoresearch/artifacts/run.log",
+  "runner_mode": "runpod",
+  "schema_version": 1,
+  "session_id": "codex-transcendent-fn-mar12-1341",
+  "status": "completed",
+  "telemetry_events_path": "/Users/josh/play/autoresearch/runpod_runs/20260312T212212Z-autoresearch/artifacts/live/relay-events.ndjson",
+  "updated_at": "2026-03-12T21:34:22Z"
+}

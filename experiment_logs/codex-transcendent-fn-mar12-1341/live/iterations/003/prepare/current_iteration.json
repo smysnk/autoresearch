@@ -1,0 +1,117 @@
+{
+  "active_tensions": [
+    {
+      "antithesis": {
+        "source": {
+          "type": "current"
+        },
+        "summary": "Remove value embeddings entirely and let plain attention plus residual mixing do the work."
+      },
+      "favored_side": "thesis",
+      "id": "value-embeddings-vs-simplicity",
+      "kind": "novelty-vs-simplicity",
+      "label": "Value embeddings vs simplicity",
+      "thesis": {
+        "source": {
+          "path": "experiment_logs/codex-transcendent-fn-mar12-0755/iterations/001/actual/train.py",
+          "type": "path"
+        },
+        "summary": "Keep alternating value embeddings because the current best completed run used them and may have gained extra information flow per token."
+      },
+      "why_active": "The incumbent spends roughly one third of its parameters on alternating value embeddings, and the March 12, 2026 branch-local no-VE attempt aborted before training, so this mechanism still lacks a clean empirical opposition inside the 300-second budget."
+    },
+    {
+      "antithesis": {
+        "source": {
+          "text": "# Deeper plain-capacity alternative\nASPECT_RATIO = 48\nDEPTH = 10\nUSE_VALUE_EMBEDDINGS = False\n",
+          "type": "inline"
+        },
+        "summary": "Spend some of the simplicity dividend on more ordinary depth, even if that costs throughput."
+      },
+      "favored_side": "thesis",
+      "id": "capacity-vs-throughput",
+      "kind": "capacity-vs-throughput",
+      "label": "Capacity vs throughput",
+      "thesis": {
+        "source": {
+          "path": "experiment_logs/codex-transcendent-fn-mar12-0755/iterations/001/actual/train.py",
+          "type": "path"
+        },
+        "summary": "Keep the proven 8-layer scale because short-run step count may dominate modest capacity gains."
+      },
+      "why_active": "The incumbent already leaves substantial VRAM headroom, but its strong result may still come more from reaching 938 steps and 491.8M tokens than from nominal parameter count."
+    },
+    {
+      "antithesis": {
+        "source": {
+          "text": "# Global-context alternative\nWINDOW_PATTERN = \"LLLL\"\n",
+          "type": "inline"
+        },
+        "summary": "Use full-window attention throughout because long-range coverage may matter more than local efficiency on 2048-token sequences."
+      },
+      "favored_side": "thesis",
+      "id": "locality-vs-global-context",
+      "kind": "inductive-bias-vs-coverage",
+      "label": "Locality vs global context",
+      "thesis": {
+        "source": {
+          "path": "experiment_logs/codex-transcendent-fn-mar12-0755/iterations/001/actual/train.py",
+          "type": "path"
+        },
+        "summary": "Preserve the mostly local `SSSL` pattern because it keeps throughput high while retaining periodic full-context refresh."
+      },
+      "why_active": "The incumbent's `SSSL` pattern is still an untested compromise between cheaper local attention and full 2048-token coverage."
+    },
+    {
+      "antithesis": {
+        "source": {
+          "text": "# Conservative schedule alternative\nEMBEDDING_LR = 0.3\nSCALAR_LR = 0.25\nWARMUP_RATIO = 0.05\nWEIGHT_DECAY = 0.1\n",
+          "type": "inline"
+        },
+        "summary": "Trade some early speed for cleaner convergence with lower Adam rates and a short warmup."
+      },
+      "favored_side": "thesis",
+      "id": "aggression-vs-stability",
+      "kind": "optimization-speed-vs-stability",
+      "label": "Aggression vs stability",
+      "thesis": {
+        "source": {
+          "path": "experiment_logs/codex-transcendent-fn-mar12-0755/iterations/001/actual/train.py",
+          "type": "path"
+        },
+        "summary": "Keep the aggressive short-horizon optimizer settings because the harness rewards fast early movement."
+      },
+      "why_active": "The incumbent uses zero warmup and aggressive Adam rates, which may be perfect for a 5-minute sprint or may be masking a cleaner optimization regime."
+    }
+  ],
+  "antithesis": "The strongest current antithesis is that the incumbent's alternating value embeddings are an unnecessary novelty tax, and a plain 8-layer `SSSL` stack can match or beat `val_bpb=0.996233` by optimizing more cleanly within the same 5-minute budget.",
+  "knowledge_anchor_experiment_id": "codex-transcendent-fn-mar12-0755:001",
+  "knowledge_opposing_experiment_id": null,
+  "knowledge_selection_reason": "The completed anchor remains `codex-transcendent-fn-mar12-0755:001` at `val_bpb=0.996233`. The nearest branch-local opposite, `codex-transcendent-fn-mar12-1341:002`, cannot count as a historical opposing experiment because on March 12, 2026 it aborted during remote bootstrap before the train loop or validation summary existed, so there is still no credible completed no-VE counterexample.",
+  "knowledge_transcendent_prediction": "If the rerun no-value-embedding ablation stays competitive with `0.996233`, the next transcendent move should keep `USE_VALUE_EMBEDDINGS = False` and reallocate part of that saved complexity into `DEPTH = 10` with `ASPECT_RATIO = 48`, rather than restoring the full novelty stack.",
+  "move_type": "negate",
+  "prediction": "Re-running the 8-layer `SSSL` no-value-embedding ablation should match or slightly beat `val_bpb=0.996233` because removing the baseline's extra 16.8M alternating value-embedding parameters reduces short-horizon optimization clutter without giving up the proven throughput profile of the incumbent recipe.",
+  "result": {
+    "contradicted_assumption": null,
+    "framing_diagnosis": null,
+    "keep_discard_status": null,
+    "next_move_type": null,
+    "outcome": null,
+    "summary_text": null
+  },
+  "synthesis_candidate": "If the no-VE rerun is competitive, test a deeper plain stack by keeping `USE_VALUE_EMBEDDINGS = False`, raising `DEPTH` to 10, and lowering `ASPECT_RATIO` to 48 so the removed novelty becomes ordinary depth while width stays at 512.",
+  "thesis": "The strongest current thesis is still the completed 8-layer `SSSL` mixed-window baseline with alternating value embeddings, which reached `val_bpb=0.996233` on the 5-minute harness.",
+  "transcendent": {
+    "antithesis_ref": "value-embeddings-vs-simplicity:antithesis",
+    "concrete_change": "After a completed no-VE rerun, keep `USE_VALUE_EMBEDDINGS = False`, set `DEPTH = 10`, and lower `ASPECT_RATIO` to 48 so the saved novelty budget becomes extra plain capacity.",
+    "emergent_thought": "A genuine synthesis only matters if the clean no-VE antithesis survives contact with the harness; until then, deeper-no-VE remains the concrete third option waiting behind this unresolved opposition.",
+    "result_status": "proposed",
+    "source_tension_ids": [
+      "capacity-vs-throughput",
+      "value-embeddings-vs-simplicity"
+    ],
+    "tested_in_iteration": false,
+    "thesis_ref": "capacity-vs-throughput:thesis"
+  },
+  "why_now": "On March 12, 2026, branch-local iteration `002` aborted during remote bootstrap after dependency setup began and before `train.py` entered the training loop, so the value-embedding antithesis is still untested in this session. Repeating the clean no-VE ablation now preserves a fair comparison to the `0.996233` anchor instead of compounding the uncertainty with a deeper or more global follow-up."
+}
