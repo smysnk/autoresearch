@@ -1,0 +1,5 @@
+Planned move is a `negate`: strip value embeddings while keeping the 8-layer `SSSL` attention pattern, batch budget, and optimizer schedule otherwise unchanged. The staged plan in [current_iteration.json](/Users/josh/play/autoresearch/research_state/current_iteration.json#L1) uses `codex-transcendent-fn-mar12-0755:001` as the knowledge anchor, keeps `knowledge_opposing_experiment_id` null because there still is no credible historical opposite, and stages a future transcendent candidate of `DEPTH = 10`, `ASPECT_RATIO = 48`, `USE_VALUE_EMBEDDINGS = False`.
+
+Prediction: this should slightly improve `val_bpb` versus `0.996233` because the baseline’s extra 16.8M value-embedding parameters are likely a short-run novelty tax, so a plainer stack may optimize more cleanly in the same 300-second budget.
+
+`train.py` did change. I added an explicit `USE_VALUE_EMBEDDINGS = False` toggle and routed `has_ve(...)` through it in [train.py](/Users/josh/play/autoresearch/train.py#L143) and [train.py](/Users/josh/play/autoresearch/train.py#L558). I did not run training; validation was limited to `python -m json.tool` on the state file and `python -m py_compile train.py`.

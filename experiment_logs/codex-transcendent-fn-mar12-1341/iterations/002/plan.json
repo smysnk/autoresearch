@@ -1,0 +1,41 @@
+{
+  "active_tension_count": 4,
+  "active_tension_ids": [
+    "value-embeddings-vs-simplicity",
+    "capacity-vs-throughput",
+    "locality-vs-global-context",
+    "aggression-vs-stability"
+  ],
+  "actual_train_diff_patch": "iterations/002/actual/train.diff.patch",
+  "actual_train_py": "iterations/002/actual/train.py",
+  "antithesis": "The strongest current antithesis is that those value embeddings are unnecessary complexity, and a plain 8-layer `SSSL` stack can match or beat the incumbent by learning more cleanly within the same short budget.",
+  "candidate_commit": "ee09166",
+  "created_at": "2026-03-12T21:07:52Z",
+  "execution_dir": "runpod_runs/20260312T210752Z-autoresearch",
+  "execution_id": "20260312T210752Z-autoresearch",
+  "experiment_index": 1,
+  "iteration": 2,
+  "iteration_label": "002",
+  "knowledge_anchor_experiment_id": "codex-transcendent-fn-mar12-0755:001",
+  "knowledge_opposing_experiment_id": null,
+  "knowledge_selection_reason": "The archived `codex-transcendent-fn-mar12-0755:001` run is still the only completed experiment that matches the incumbent axis mix closely enough to anchor decisions. No prior completed run cleanly removed value embeddings while holding the rest of the 8-layer `SSSL` recipe fixed, so there is no credible historical opposite to cite yet.",
+  "knowledge_transcendent_prediction": "If the no-value-embedding negation stays competitive with `0.996233`, the next synthesis should keep `USE_VALUE_EMBEDDINGS = False` and reinvest part of the saved complexity into extra plain depth with a lower aspect ratio, instead of restoring the full novelty stack.",
+  "move_type": "negate",
+  "parent_commit": "4b4f4ba",
+  "prediction": "Disabling alternating value embeddings while keeping the 8-layer `SSSL` optimizer setup unchanged will slightly improve `val_bpb` because the baseline's extra 16.8M value-embedding parameters are likely a short-horizon novelty tax, so a plainer stack should spend the same 300-second budget on cleaner optimization and a touch more throughput.",
+  "prepare_modified_files": [
+    "research_state/current_iteration.json",
+    "train.py"
+  ],
+  "prepare_phase_path": "iterations/002/codex/prepare",
+  "prepare_summary": "Planned move is a `negate`: strip value embeddings while keeping the 8-layer `SSSL` attention pattern, batch budget, and optimizer schedule otherwise unchanged. The staged plan in [current_iteration.json](/Users/josh/play/autoresearch/research_state/current_iteration.json#L1) uses `codex-transcendent-fn-mar12-0755:001` as the knowledge anchor, keeps `knowledge_opposing_experiment_id` null because there still is no credible historical opposite, and stages a future transcendent candidate of `DEPTH = 10`, `ASPECT_RATIO = 48`, `USE_VALUE_EMBEDDINGS = False`.",
+  "runner_mode": "runpod",
+  "schema_version": 1,
+  "session_id": "codex-transcendent-fn-mar12-1341",
+  "status": "planned",
+  "synthesis_candidate": "If the no-VE ablation is competitive, test a deeper plain stack by keeping `USE_VALUE_EMBEDDINGS = False`, raising `DEPTH` to 10, and lowering `ASPECT_RATIO` to 48 so the model stays at 512 width while the removed novelty tax turns into extra ordinary depth.",
+  "tensions_path": "iterations/002/tensions",
+  "thesis": "The strongest current thesis is the completed 8-layer `SSSL` mixed-window baseline with alternating value embeddings, which reached `val_bpb=0.996233` on the 5-minute harness.",
+  "transcendent_result_path": "iterations/002/transcendent/result.json",
+  "why_now": "The only trustworthy local performance signal is the completed `codex-transcendent-fn-mar12-0755:001` baseline at `val_bpb=0.996233`, and there is still no historical run that cleanly isolates the value-embedding antithesis. This iteration creates that missing opposition before attempting a reallocation synthesis."
+}

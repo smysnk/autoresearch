@@ -1,0 +1,13 @@
+{
+  "antithesis_ref": "value-embeddings-vs-simplicity:antithesis",
+  "concrete_change": "After a completed no-VE rerun, keep `USE_VALUE_EMBEDDINGS = False`, set `DEPTH = 10`, and lower `ASPECT_RATIO` to 48 so the saved novelty budget becomes extra plain capacity.",
+  "emergent_thought": "A genuine synthesis only matters if the clean no-VE antithesis survives contact with the harness; until then, deeper-no-VE remains the concrete third option waiting behind this unresolved opposition.",
+  "result_status": "proposed",
+  "schema_version": 1,
+  "source_tension_ids": [
+    "capacity-vs-throughput",
+    "value-embeddings-vs-simplicity"
+  ],
+  "tested_in_iteration": false,
+  "thesis_ref": "capacity-vs-throughput:thesis"
+}

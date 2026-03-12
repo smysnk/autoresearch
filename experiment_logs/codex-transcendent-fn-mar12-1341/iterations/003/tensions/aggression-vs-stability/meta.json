@@ -1,0 +1,21 @@
+{
+  "antithesis_source": {
+    "type": "inline"
+  },
+  "antithesis_summary": "Trade some early speed for cleaner convergence with lower Adam rates and a short warmup.",
+  "antithesis_train_py": "iterations/003/tensions/aggression-vs-stability/antithesis/train.py",
+  "created_in_iteration": 3,
+  "favored_side": "thesis",
+  "id": "aggression-vs-stability",
+  "kind": "optimization-speed-vs-stability",
+  "label": "Aggression vs stability",
+  "schema_version": 1,
+  "thesis_source": {
+    "path": "experiment_logs/codex-transcendent-fn-mar12-0755/iterations/001/actual/train.py",
+    "type": "path"
+  },
+  "thesis_summary": "Keep the aggressive short-horizon optimizer settings because the harness rewards fast early movement.",
+  "thesis_train_py": "iterations/003/tensions/aggression-vs-stability/thesis/train.py",
+  "updated_in_iteration": 3,
+  "why_active": "The incumbent uses zero warmup and aggressive Adam rates, which may be perfect for a 5-minute sprint or may be masking a cleaner optimization regime."
+}

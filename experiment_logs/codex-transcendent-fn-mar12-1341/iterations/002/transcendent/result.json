@@ -1,0 +1,13 @@
+{
+  "antithesis_ref": "value-embeddings-vs-simplicity:antithesis",
+  "concrete_change": "If this no-VE negation is competitive, keep `USE_VALUE_EMBEDDINGS = False`, set `DEPTH = 10`, and lower `ASPECT_RATIO` to 48 so the added layers arrive without also widening the model.",
+  "emergent_thought": "Only after we learn whether plain attention can stay competitive should we convert the removed novelty tax into extra depth; otherwise the branch risks mixing simplification and capacity changes before the antithesis is even real.",
+  "result_status": "proposed",
+  "schema_version": 1,
+  "source_tension_ids": [
+    "capacity-vs-throughput",
+    "value-embeddings-vs-simplicity"
+  ],
+  "tested_in_iteration": false,
+  "thesis_ref": "capacity-vs-throughput:thesis"
+}

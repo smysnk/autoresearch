@@ -1,0 +1,21 @@
+{
+  "antithesis_source": {
+    "type": "inline"
+  },
+  "antithesis_summary": "Use full-window attention throughout because long-range coverage may matter more than local efficiency on 2048-token sequences.",
+  "antithesis_train_py": "iterations/003/tensions/locality-vs-global-context/antithesis/train.py",
+  "created_in_iteration": 3,
+  "favored_side": "thesis",
+  "id": "locality-vs-global-context",
+  "kind": "inductive-bias-vs-coverage",
+  "label": "Locality vs global context",
+  "schema_version": 1,
+  "thesis_source": {
+    "path": "experiment_logs/codex-transcendent-fn-mar12-0755/iterations/001/actual/train.py",
+    "type": "path"
+  },
+  "thesis_summary": "Preserve the mostly local `SSSL` pattern because it keeps throughput high while retaining periodic full-context refresh.",
+  "thesis_train_py": "iterations/003/tensions/locality-vs-global-context/thesis/train.py",
+  "updated_in_iteration": 3,
+  "why_active": "The incumbent's `SSSL` pattern is still an untested compromise between cheaper local attention and full 2048-token coverage."
+}
