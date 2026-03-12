@@ -8,6 +8,7 @@ import json
 import os
 import posixpath
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -26,7 +27,6 @@ DEFAULT_CONFIG_PATH = "runpod.json"
 DEFAULT_PROFILES_PATH = "profiles.json"
 DEFAULT_IMAGE = "runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04"
 DEFAULT_ENV_PATH = ".env"
-REMOTE_GIT_KEY_RELATIVE_PATH = ".ssh/autoresearch_git_key"
 SYNC_EXCLUDES = [
     ".git/",
     ".venv/",
@@ -270,7 +270,7 @@ class RunpodConfig:
             env_name="RUNPOD_SSH_PRIVATE_KEY",
         )
         repo_value = os.environ.get("AUTORESEARCH_REPO") or data.get("repo")
-        repo_url = normalize_repo_url(repo_root, repo_value, prefer_ssh=ssh_private_key is not None)
+        repo_url = normalize_repo_url(repo_root, repo_value, prefer_ssh=False)
         repo_push_target = resolve_push_target(repo_root, repo_value, prefer_ssh=ssh_private_key is not None)
         profile_raw = os.environ.get("RUNPOD_PROFILE")
         if profile_raw is None:
@@ -522,7 +522,8 @@ def write_tracked_reports(
     cfg: RunpodConfig,
     gpu_type_ids: list[str],
     gpu_type_priority: str,
-    pod: dict[str, Any] | None,
+    selected_gpu_type: str | None,
+    cost_per_hr: float | int | str | None,
     exit_code: int,
     summary: dict[str, str],
 ) -> None:
@@ -539,8 +540,8 @@ def write_tracked_reports(
             "profile_name": profile_name(cfg.profile),
             "gpu_type_ids": gpu_type_ids,
             "gpu_type_priority": gpu_type_priority,
-            "selected_gpu_type": ((pod or {}).get("machine") or {}).get("gpuTypeId"),
-            "cost_per_hr": (pod or {}).get("costPerHr"),
+            "selected_gpu_type": selected_gpu_type,
+            "cost_per_hr": cost_per_hr,
             "exit_code": exit_code,
             "metrics": summary,
         },
@@ -749,35 +750,23 @@ def run_scp(conn: SSHConnection, remote_path: str, local_path: Path, *, recursiv
     return subprocess.run(cmd, text=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def sync_git_private_key_to_remote(conn: SSHConnection, private_key_path: str | None) -> None:
-    if private_key_path is None:
-        run_ssh(conn, f"rm -f $HOME/{json.dumps(REMOTE_GIT_KEY_RELATIVE_PATH)}", check=False)
-        return
-    run_ssh(conn, "mkdir -p $HOME/.ssh && chmod 700 $HOME/.ssh")
-    scp_to_remote(conn, Path(private_key_path), REMOTE_GIT_KEY_RELATIVE_PATH)
-    run_ssh(conn, f"chmod 600 $HOME/{json.dumps(REMOTE_GIT_KEY_RELATIVE_PATH)}")
-
-
 def deploy_clone_to_remote(
     repo_root: Path,
     conn: SSHConnection,
     remote_repo_dir: str,
     branch: str,
     repo_url: str,
-    private_key_path: str | None,
 ) -> None:
     remote_dir = remote_repo_dir.rstrip("/")
     parent_dir = posixpath.dirname(remote_dir) or "."
     git_name = git_config_value(repo_root, "user.name") or "autoresearch"
     git_email = git_config_value(repo_root, "user.email") or "autoresearch@localhost"
-    git_key_path = "$HOME/" + REMOTE_GIT_KEY_RELATIVE_PATH if private_key_path is not None else ""
     script = f"""
 set -euo pipefail
 repo_dir={json.dumps(remote_dir)}
 parent_dir={json.dumps(parent_dir)}
 repo_url={json.dumps(repo_url)}
 branch_name={json.dumps(branch)}
-git_key_path={json.dumps(git_key_path)}
 if ! command -v git >/dev/null 2>&1; then
   if command -v apt-get >/dev/null 2>&1; then
     export DEBIAN_FRONTEND=noninteractive
@@ -787,19 +776,6 @@ if ! command -v git >/dev/null 2>&1; then
     echo "git is required on the remote host" >&2
     exit 1
   fi
-fi
-if [ -n "$git_key_path" ] && ! command -v ssh >/dev/null 2>&1; then
-  if command -v apt-get >/dev/null 2>&1; then
-    export DEBIAN_FRONTEND=noninteractive
-    apt-get update
-    apt-get install -y openssh-client
-  else
-    echo "ssh client is required on the remote host for RUNPOD_SSH_PRIVATE_KEY" >&2
-    exit 1
-  fi
-fi
-if [ -n "$git_key_path" ]; then
-  export GIT_SSH_COMMAND="ssh -i \"$git_key_path\" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
 fi
 mkdir -p "$parent_dir"
 if [ -d "$repo_dir/.git" ]; then
@@ -1272,6 +1248,13 @@ def scp_to_remote(conn: SSHConnection, local_path: Path, remote_path: str) -> No
     run_local(cmd, cwd=local_path.parent)
 
 
+def sync_remote_train_py_to_local(conn: SSHConnection, remote_repo_dir: str, repo_root: Path) -> None:
+    local_train_py = repo_root / "train.py"
+    remote_train_py = posixpath.join(remote_repo_dir, "train.py")
+    cmd = ["scp", *scp_base_args(conn), f"{conn.user}@{conn.host}:{remote_train_py}", str(local_train_py)]
+    run_local(cmd, cwd=repo_root)
+
+
 def start_remote_run(conn: SSHConnection, remote_repo_dir: str, local_script: Path) -> None:
     remote_script = posixpath.join(remote_repo_dir, ".runpod_execute.sh")
     scp_to_remote(conn, local_script, remote_script)
@@ -1372,6 +1355,7 @@ def execute_once(
     remote_repo_dir = posixpath.join(cfg.remote_base_dir, "executions", paths.execution_dir.name)
     client = RunpodClient(cfg.api_key)
     pod_id = ""
+    selected_gpu_type: str | None = None
     try:
         gpu_type_ids, gpu_type_priority = resolve_gpu_selection(client, cfg, paths)
         write_json(
@@ -1395,13 +1379,12 @@ def execute_once(
 
         append_log(log_path, "waiting for pod to expose SSH")
         pod, conn = wait_for_pod_ready(client, pod_id, cfg, paths)
+        selected_gpu_type = ((pod.get("machine") or {}).get("gpuTypeId")) or selected_gpu_type
         append_log(log_path, f"pod public_ip={conn.host} ssh_port={conn.port}")
 
         append_log(log_path, "waiting for SSH to accept connections")
         wait_for_ssh(conn, cfg)
 
-        append_log(log_path, "syncing git deploy key to pod")
-        sync_git_private_key_to_remote(conn, cfg.ssh_private_key)
         append_log(log_path, "deploying git clone to pod")
         deploy_clone_to_remote(
             repo_root,
@@ -1409,7 +1392,6 @@ def execute_once(
             remote_repo_dir,
             branch,
             cfg.repo_url,
-            cfg.ssh_private_key,
         )
 
         append_log(log_path, "bootstrapping remote environment")
@@ -1424,6 +1406,7 @@ def execute_once(
         append_log(log_path, f"remote run exit_code={exit_code}")
 
         collect_artifacts(conn, remote_repo_dir, paths, cfg.collect_artifacts)
+        sync_remote_train_py_to_local(conn, remote_repo_dir, repo_root)
         summary = parse_summary(paths.artifacts_dir / "run.log")
         write_json(paths.metadata_dir / "summary.json", summary)
         final_pod = client.get_pod(pod_id)
@@ -1435,7 +1418,8 @@ def execute_once(
             cfg=cfg,
             gpu_type_ids=gpu_type_ids,
             gpu_type_priority=gpu_type_priority,
-            pod=final_pod,
+            selected_gpu_type=((final_pod.get("machine") or {}).get("gpuTypeId")) or selected_gpu_type,
+            cost_per_hr=final_pod.get("costPerHr"),
             exit_code=exit_code,
             summary=summary,
         )
