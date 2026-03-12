@@ -684,10 +684,10 @@ def experiment_tag(now: datetime | None = None) -> str:
 
 def ensure_experiment_branch(repo_root: Path) -> str:
     branch = current_branch(repo_root)
-    if branch.startswith("autoresearch/"):
+    if branch.startswith("codex/"):
         return branch
 
-    base = f"autoresearch/{experiment_tag()}"
+    base = f"codex/autoresearch-{experiment_tag()}"
     candidate = base
     suffix = 2
     while branch_exists(repo_root, candidate):
