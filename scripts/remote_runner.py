@@ -19,7 +19,6 @@ from pathlib import Path
 DEFAULT_ENV_PATH = ".env"
 REMOTE_HOST_ENV = "AUTORESEARCH_REMOTE_HOST"
 REMOTE_DIR_ENV = "AUTORESEARCH_REMOTE_DIR"
-REMOTE_GIT_KEY_RELATIVE_PATH = ".ssh/autoresearch_git_key"
 SUMMARY_KEYS = [
     "val_bpb",
     "training_seconds",
@@ -61,8 +60,16 @@ class RemoteConfig:
         return self.repo_root / "remote_runs"
 
     @property
+    def local_train_py(self) -> Path:
+        return self.repo_root / "train.py"
+
+    @property
     def remote_run_log(self) -> str:
         return f"{self.remote_dir}/run.log"
+
+    @property
+    def remote_train_py(self) -> str:
+        return f"{self.remote_dir}/train.py"
 
 
 def shell(script: str) -> str:
@@ -270,27 +277,11 @@ def capture_remote(cfg: RemoteConfig, script: str, *, check: bool = True) -> sub
     return subprocess.run(cmd, text=True, capture_output=True, check=check)
 
 
-def sync_git_private_key(cfg: RemoteConfig) -> None:
-    if cfg.ssh_private_key_path is None:
-        run_remote(cfg, f"rm -f $HOME/{shlex.quote(REMOTE_GIT_KEY_RELATIVE_PATH)}", check=False)
-        return
-    run_remote(
-        cfg,
-        f"mkdir -p $HOME/.ssh && chmod 700 $HOME/.ssh",
-    )
-    run_local(
-        ["scp", *scp_base_args(cfg), str(cfg.ssh_private_key_path), f"{cfg.host}:{REMOTE_GIT_KEY_RELATIVE_PATH}"],
-        cwd=cfg.repo_root,
-    )
-    run_remote(cfg, f"chmod 600 $HOME/{shlex.quote(REMOTE_GIT_KEY_RELATIVE_PATH)}")
-
-
 def deploy_clone(cfg: RemoteConfig, branch: str) -> None:
     remote_dir = cfg.remote_dir.rstrip("/")
     parent_dir = posixpath.dirname(remote_dir) or "."
     git_name = git_config_value(cfg.repo_root, "user.name") or "autoresearch"
     git_email = git_config_value(cfg.repo_root, "user.email") or "autoresearch@localhost"
-    git_key_path = "$HOME/" + REMOTE_GIT_KEY_RELATIVE_PATH if cfg.ssh_private_key_path is not None else ""
 
     script = f"""
 set -euo pipefail
@@ -298,7 +289,6 @@ repo_dir={shlex.quote(remote_dir)}
 parent_dir={shlex.quote(parent_dir)}
 repo_url={shlex.quote(cfg.repo_url)}
 branch_name={shlex.quote(branch)}
-git_key_path={shlex.quote(git_key_path)}
 if ! command -v git >/dev/null 2>&1; then
   if command -v apt-get >/dev/null 2>&1; then
     export DEBIAN_FRONTEND=noninteractive
@@ -308,19 +298,6 @@ if ! command -v git >/dev/null 2>&1; then
     echo "git is required on the remote host" >&2
     exit 1
   fi
-fi
-if [ -n "$git_key_path" ] && ! command -v ssh >/dev/null 2>&1; then
-  if command -v apt-get >/dev/null 2>&1; then
-    export DEBIAN_FRONTEND=noninteractive
-    apt-get update
-    apt-get install -y openssh-client
-  else
-    echo "ssh client is required on the remote host for RUNPOD_SSH_PRIVATE_KEY" >&2
-    exit 1
-  fi
-fi
-if [ -n "$git_key_path" ]; then
-  export GIT_SSH_COMMAND="ssh -i \"$git_key_path\" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
 fi
 mkdir -p "$parent_dir"
 if [ -d "$repo_dir/.git" ]; then
@@ -378,6 +355,13 @@ def fetch_run_log(cfg: RemoteConfig) -> Path:
     return archive_path
 
 
+def sync_remote_train_py(cfg: RemoteConfig) -> None:
+    run_local(
+        ["scp", *scp_base_args(cfg), f"{cfg.host}:{cfg.remote_train_py}", str(cfg.local_train_py)],
+        cwd=cfg.repo_root,
+    )
+
+
 def sanitize_host(host: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", host)
 
@@ -416,7 +400,6 @@ def setup_command(cfg: RemoteConfig, args: argparse.Namespace) -> int:
     if pre_commit is not None:
         print(f"committed local changes before remote setup: {pre_commit}")
     push_repo(cfg.repo_root, cfg.repo_push_target, cfg.ssh_private_key_path)
-    sync_git_private_key(cfg)
     deploy_clone(cfg, branch)
     ensure_remote_env(
         cfg,
@@ -437,7 +420,6 @@ def run_command(cfg: RemoteConfig, args: argparse.Namespace) -> int:
         print(f"committed local changes before remote run: {pre_commit}")
     push_repo(cfg.repo_root, cfg.repo_push_target, cfg.ssh_private_key_path)
     if not args.skip_sync:
-        sync_git_private_key(cfg)
         deploy_clone(cfg, branch)
     if args.bootstrap:
         ensure_remote_env(
@@ -464,6 +446,7 @@ export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 """
     result = run_remote(cfg, script, check=False)
     archive_path = fetch_run_log(cfg)
+    sync_remote_train_py(cfg)
     summary = parse_summary(cfg.local_run_log.read_text())
     if summary:
         print_summary(summary)
@@ -497,6 +480,7 @@ export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
 def fetch_log_command(cfg: RemoteConfig, _args: argparse.Namespace) -> int:
     archive_path = fetch_run_log(cfg)
+    sync_remote_train_py(cfg)
     summary = parse_summary(cfg.local_run_log.read_text())
     if summary:
         print_summary(summary)
@@ -616,7 +600,7 @@ def main() -> int:
         host=host,
         remote_dir=remote_dir,
         repo_root=repo_root,
-        repo_url=normalize_repo_url(repo_root, repo_value, prefer_ssh=ssh_private_key_path is not None),
+        repo_url=normalize_repo_url(repo_root, repo_value, prefer_ssh=False),
         repo_push_target=resolve_push_target(repo_root, repo_value, prefer_ssh=ssh_private_key_path is not None),
         ssh_private_key_path=ssh_private_key_path,
     )

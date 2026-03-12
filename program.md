@@ -17,7 +17,7 @@ To set up a new experiment, work with the user to:
    - remote execution: Confirm the SSH target is reachable. `python3 scripts/remote_runner.py setup` will prepare the remote cache if it is missing.
 5. **Initialize results.tsv**: Create `results.tsv` with just the header row. The baseline will be recorded after the first run.
 6. **Initialize research_journal.tsv**: Create `research_journal.tsv` with just the header row. This is an untracked scratchpad for predictions, contradictions, and synthesis notes.
-7. **Optional remote bootstrap**: If the experiments should run on a remote CUDA machine, run `python3 scripts/remote_runner.py setup`. This pushes the current experiment branch and has the remote host clone it from the configured repo, bootstraps `uv`, prepares data if needed, and keeps the execution environment there. The fetched `run.log` will still appear locally after each run.
+7. **Optional remote bootstrap**: If the experiments should run on a remote CUDA machine, run `python3 scripts/remote_runner.py setup`. This pushes the current experiment branch and has the remote host clone it from the configured repo, bootstraps `uv`, prepares data if needed, and keeps the execution environment there. The fetched `run.log` will still appear locally after each run, and the exact remote `train.py` snapshot will be copied back over the local `train.py` before the post-run commit.
 8. **Confirm and go**: Confirm setup looks good.
 
 Once you get confirmation, kick off the experimentation.
@@ -26,7 +26,7 @@ Once you get confirmation, kick off the experimentation.
 
 Each experiment runs on a single GPU. The training script runs for a **fixed time budget of 5 minutes** (wall clock training time, excluding startup/compilation). You launch it simply as: `uv run train.py`.
 
-If you are using the remote runner, launch experiments with `python3 scripts/remote_runner.py run --bootstrap` instead. It pushes your local experiment branch, has the remote machine clone that branch from the configured repo, executes `train.py` there, and copies `run.log` back to the local repo so the rest of the loop stays the same.
+If you are using the remote runner, launch experiments with `python3 scripts/remote_runner.py run --bootstrap` instead. It pushes your local experiment branch, has the remote machine clone that branch from the configured repo, executes `train.py` there, copies `run.log` back to the local repo, and then refreshes the local `train.py` from the exact remote snapshot used for the run.
 
 **What you CAN do:**
 - Modify `train.py` — this is the only file you edit. Everything is fair game: model architecture, optimizer, hyperparameters, training loop, batch size, model size, etc.

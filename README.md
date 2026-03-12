@@ -48,6 +48,7 @@ If your local machine is not CUDA-capable, you can keep the repo here and execut
 - optionally runs `prepare.py` remotely if the cache is missing
 - executes `train.py` remotely
 - copies `run.log` back to the local repo so the existing workflow can read results normally
+- refreshes the local `train.py` from the exact remote snapshot before the post-run commit
 
 The remote SSH target is configured through `--host` / `--remote-dir` or through `.env`:
 
@@ -67,13 +68,13 @@ python3 scripts/remote_runner.py run --bootstrap
 python3 scripts/remote_runner.py status
 ```
 
-After a remote run completes, the fetched log is available locally as `run.log`, and archived copies are written under `remote_runs/`.
+After a remote run completes, the fetched log is available locally as `run.log`, the local `train.py` is overwritten with the exact remote snapshot used for the run, and archived log copies are written under `remote_runs/`.
 
 Before the first experiment run, the helper creates a local `autoresearch/<date>-<hour><minute>` branch if you are not already on an `autoresearch/` branch. It commits all non-ignored local changes before deploying so the remote machine always runs an actual git clone, then commits any additional non-ignored post-run changes and pushes the current branch to the repo target implied by `AUTORESEARCH_REPO` (or `origin` if unset). This happens on the local machine, not on the remote host, so either your local git credentials or `RUNPOD_SSH_PRIVATE_KEY` must already be configured.
 
 The remote clone source comes from `AUTORESEARCH_REPO` in `.env`. You can set it either as a GitHub slug such as `smysnk/autoresearch` or as a full git URL. If omitted, the runners fall back to the local `origin` remote and convert GitHub SSH remotes to HTTPS for cloning. In practice, `AUTORESEARCH_REPO` should point at the same repository you expect the branch pushes to land in.
 
-If the repository is private, set `RUNPOD_SSH_PRIVATE_KEY` in `.env` to a local SSH private key path. The runners use that single key for the local branch push, remote SSH/SCP transport, and remote machine or Runpod Pod `git clone` / `git fetch` operations. For GitHub slugs and GitHub URLs, enabling this key makes the remote clone switch to `git@github.com:...` automatically.
+`RUNPOD_SSH_PRIVATE_KEY` stays on the local machine. The runners use it for local branch pushes and for SSH/SCP transport to the remote host or Pod, but they do not copy it onto the remote machine anymore. That means `AUTORESEARCH_REPO` must be cloneable from the remote environment without a copied deploy key, or the remote environment must already have its own git credentials available.
 
 For the plain SSH remote runner, you also need:
 
@@ -92,6 +93,7 @@ High-level flow:
 - bootstrap `uv`, dependencies, and dataset cache on the Pod
 - run `train.py`
 - poll the Pod, copy intermediate artifacts back locally, and save Pod metadata snapshots
+- overwrite the local `train.py` with the exact Pod snapshot before the post-run commit
 - terminate the Pod when the run finishes
 
 Each execution gets its own local folder under `runpod_runs/<execution-id>/` with:
@@ -106,7 +108,7 @@ Setup:
 ```bash
 # 1. Review profiles.json to see the built-in numbered Runpod profiles
 
-# 2. Copy .env.example to .env and fill in your repo, shared SSH key,
+# 2. Copy .env.example to .env and fill in your repo, local SSH key,
 #    Runpod API key, desired profile, and how many full executions you want to run
 cp .env.example .env
 
@@ -114,7 +116,7 @@ cp .env.example .env
 
 # 4. Make sure the public half of your SSH key is added to your Runpod account
 #    and that RUNPOD_SSH_PRIVATE_KEY points at the matching private key.
-#    That same key is reused for private repo access.
+#    Repo cloning on the Pod must work without copying that private key.
 ```
 
 Run one full execution:
@@ -127,7 +129,7 @@ By default this will terminate the Pod at the end. Pass `--keep-pod` if you want
 
 Before the first Runpod experiment, the runner creates a local `autoresearch/<date>-<hour><minute>` branch if you are not already on one. Before each experiment it commits all non-ignored local changes, pushes the branch to the repo target implied by `AUTORESEARCH_REPO` (or `origin` if unset), and then has the Pod clone that branch from the configured repo. After each experiment it commits any additional non-ignored changes and pushes the current branch again. This happens from the local orchestrator after artifacts are collected, so either your local git credentials or `RUNPOD_SSH_PRIVATE_KEY` must already be configured.
 
-After each Runpod experiment, the runner still retrieves the full remote artifact set into `artifacts/`, plus the orchestration logs and Pod metadata into `logs/` and `metadata/`. It also copies the committable subset into `reports/`, which is the only Runpod output directory left visible to git.
+After each Runpod experiment, the runner still retrieves the full remote artifact set into `artifacts/`, plus the orchestration logs and Pod metadata into `logs/` and `metadata/`. It also overwrites the local `train.py` with the exact snapshot used on the Pod before committing, and copies the committable subset into `reports/`, which is the only Runpod output directory left visible to git.
 
 Preview the current best GPU candidates without launching a Pod:
 
