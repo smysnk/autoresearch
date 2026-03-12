@@ -7,17 +7,25 @@ import type {
   CodexPhaseArtifact,
   CodeSnapshot,
   IterationNode,
+  KnowledgeExperimentLink,
+  KnowledgeTensionPair,
   LiveReflectionState,
   LiveRunProgress,
   LiveSessionState,
   MetricSnapshot,
   SessionGraph,
+  SessionKnowledgeSummary,
   SessionStats,
   TensionNode,
   TranscendentArtifact,
 } from "./types";
 
 type JsonRecord = Record<string, unknown>;
+type KnowledgeBundle = {
+  experimentsById: Map<string, JsonRecord>;
+  sessionSummaries: Map<string, JsonRecord>;
+  incumbents: JsonRecord | null;
+};
 
 function getRepoRoot(): string {
   if (process.env.AUTORESEARCH_REPO_ROOT) {
@@ -83,6 +91,27 @@ function readJson(target: string): JsonRecord | null {
   return null;
 }
 
+function readJsonLines(target: string): JsonRecord[] {
+  const content = readText(target);
+  if (!content) {
+    return [];
+  }
+
+  return content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        const parsed = JSON.parse(line) as unknown;
+        return asRecord(parsed);
+      } catch {
+        return null;
+      }
+    })
+    .filter((entry): entry is JsonRecord => Boolean(entry));
+}
+
 function asRecord(value: unknown): JsonRecord | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as JsonRecord) : null;
 }
@@ -111,6 +140,23 @@ function toNumber(value: unknown): number | null {
   return null;
 }
 
+function compareNullableNumberAsc(left: number | null, right: number | null): number {
+  if (left === null && right === null) {
+    return 0;
+  }
+  if (left === null) {
+    return 1;
+  }
+  if (right === null) {
+    return -1;
+  }
+  return left - right;
+}
+
+function compareNullableNumberDesc(left: number | null, right: number | null): number {
+  return compareNullableNumberAsc(right, left);
+}
+
 function padIteration(iteration: number): string {
   return String(iteration).padStart(3, "0");
 }
@@ -130,6 +176,260 @@ function makeCodeSnapshot(
     content,
     path: filePath ? relativeToRepo(filePath) : null,
   };
+}
+
+function parseExperimentId(experimentId: string | null): {
+  sessionId: string;
+  iteration: number;
+  iterationLabel: string;
+} | null {
+  if (!experimentId) {
+    return null;
+  }
+
+  const [sessionId, iterationLabel] = experimentId.split(":");
+  if (!sessionId || !iterationLabel) {
+    return null;
+  }
+
+  const iteration = Number.parseInt(iterationLabel, 10);
+  return {
+    sessionId,
+    iteration: Number.isFinite(iteration) ? iteration : 0,
+    iterationLabel: /^\d+$/.test(iterationLabel) ? iterationLabel.padStart(3, "0") : iterationLabel,
+  };
+}
+
+function sessionPathFromSourceIterationPath(sourceIterationPath: string | null): string | null {
+  if (!sourceIterationPath) {
+    return null;
+  }
+  const normalized = sourceIterationPath.replaceAll("\\", "/");
+  const marker = "/iterations/";
+  const markerIndex = normalized.indexOf(marker);
+  if (markerIndex === -1) {
+    return null;
+  }
+  return normalized.slice(0, markerIndex);
+}
+
+function loadKnowledgeBundle(): KnowledgeBundle {
+  const root = path.join(getRepoRoot(), "knowledge_base");
+  if (!isDirectory(root)) {
+    return {
+      experimentsById: new Map(),
+      sessionSummaries: new Map(),
+      incumbents: null,
+    };
+  }
+
+  const experimentsById = new Map<string, JsonRecord>();
+  for (const record of readJsonLines(path.join(root, "experiments.jsonl"))) {
+    const experimentId = asString(record.experiment_id);
+    if (experimentId) {
+      experimentsById.set(experimentId, record);
+    }
+  }
+
+  const sessionSummaries = new Map<string, JsonRecord>();
+  const sessionsRoot = path.join(root, "sessions");
+  if (fs.existsSync(sessionsRoot)) {
+    for (const entry of fs.readdirSync(sessionsRoot, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith(".json")) {
+        continue;
+      }
+      const sessionSummary = readJson(path.join(sessionsRoot, entry.name));
+      if (!sessionSummary) {
+        continue;
+      }
+      const sessionId = asString(sessionSummary.session_id);
+      if (sessionId) {
+        sessionSummaries.set(sessionId, sessionSummary);
+      }
+    }
+  }
+
+  return {
+    experimentsById,
+    sessionSummaries,
+    incumbents: readJson(path.join(root, "incumbents.json")),
+  };
+}
+
+function buildKnowledgeExperimentLink(record: JsonRecord | null): KnowledgeExperimentLink | null {
+  if (!record) {
+    return null;
+  }
+
+  const experimentId = asString(record.experiment_id);
+  const parsed = parseExperimentId(experimentId);
+  if (!experimentId || !parsed) {
+    return null;
+  }
+
+  const sourceIterationPath = asString(record.source_iteration_path);
+
+  return {
+    experimentId,
+    sessionId: asString(record.session_id) ?? parsed.sessionId,
+    iteration: toNumber(record.iteration) ?? parsed.iteration,
+    iterationLabel: asString(record.iteration_label) ?? parsed.iterationLabel,
+    branch: asString(record.branch),
+    title: asString(record.branch),
+    sessionPath: sessionPathFromSourceIterationPath(sourceIterationPath),
+    sourceIterationPath,
+    knowledgeRef: asString(record.knowledge_ref),
+    valBpb: toNumber(record.val_bpb),
+    keepDiscardStatus: asString(record.keep_discard_status),
+    outcome: asString(record.outcome) ?? asString(record.status),
+    takeaway: asString(record.takeaway),
+    confidence: asString(record.confidence),
+    evidenceStrength: toNumber(record.evidence_strength),
+    axisTags: asStringArray(record.axis_tags),
+    mechanismTags: asStringArray(record.mechanism_tags),
+  };
+}
+
+function buildKnowledgeTensionPair(record: JsonRecord | null): KnowledgeTensionPair | null {
+  if (!record) {
+    return null;
+  }
+
+  return {
+    anchorExperimentId: asString(record.anchor_experiment_id),
+    opposingExperimentId: asString(record.opposing_experiment_id),
+    selectionReason: asString(record.selection_reason),
+    sharedAxes: asStringArray(record.shared_axes),
+    opposedAxes: asStringArray(record.opposed_axes),
+    relevanceScore: toNumber(record.relevance_score),
+    oppositionScore: toNumber(record.opposition_score),
+    totalScore: toNumber(record.total_score),
+    transcendentPrediction: asString(record.transcendent_prediction),
+  };
+}
+
+function resolveKnowledgeExperimentLinks(
+  experimentIds: string[],
+  knowledgeBundle: KnowledgeBundle,
+): KnowledgeExperimentLink[] {
+  return experimentIds
+    .map((experimentId) => buildKnowledgeExperimentLink(knowledgeBundle.experimentsById.get(experimentId) ?? null))
+    .filter((entry): entry is KnowledgeExperimentLink => Boolean(entry));
+}
+
+function buildSessionKnowledgeSummary(
+  sessionId: string,
+  knowledgeBundle: KnowledgeBundle,
+): SessionKnowledgeSummary | null {
+  const summary = knowledgeBundle.sessionSummaries.get(sessionId) ?? null;
+  if (!summary) {
+    return null;
+  }
+
+  const bestExperimentId = asString(summary.best_experiment_id);
+  const latestAnchorExperimentId = asString(summary.latest_anchor_experiment_id);
+  const latestOpposingExperimentId = asString(summary.latest_opposing_experiment_id);
+  const bestExperiment = buildKnowledgeExperimentLink(
+    bestExperimentId ? knowledgeBundle.experimentsById.get(bestExperimentId) ?? null : null,
+  );
+  const latestAnchor = buildKnowledgeExperimentLink(
+    latestAnchorExperimentId ? knowledgeBundle.experimentsById.get(latestAnchorExperimentId) ?? null : null,
+  );
+  const latestOpposing = buildKnowledgeExperimentLink(
+    latestOpposingExperimentId ? knowledgeBundle.experimentsById.get(latestOpposingExperimentId) ?? null : null,
+  );
+
+  return {
+    bestExperimentId,
+    bestValBpb: toNumber(summary.best_val_bpb),
+    latestAnchorExperimentId,
+    latestOpposingExperimentId,
+    defaultTensionPairCount: toNumber(summary.default_tension_pair_count),
+    defaultTensionPairsWithOpposition: toNumber(summary.default_tension_pairs_with_opposition),
+    sourceSessionPath: asString(summary.source_session_path),
+    bestExperiment,
+    latestAnchor,
+    latestOpposing,
+    raw: summary,
+  };
+}
+
+function dedupeKnowledgeLinks(links: KnowledgeExperimentLink[]): KnowledgeExperimentLink[] {
+  const seen = new Set<string>();
+  const deduped: KnowledgeExperimentLink[] = [];
+  for (const link of links) {
+    if (seen.has(link.experimentId)) {
+      continue;
+    }
+    seen.add(link.experimentId);
+    deduped.push(link);
+  }
+  return deduped;
+}
+
+function buildIncumbentLineage(
+  iterations: IterationNode[],
+  knowledgeBundle: KnowledgeBundle,
+): KnowledgeExperimentLink[] {
+  const ids: string[] = [];
+  for (const iteration of [...iterations].sort((left, right) => left.iteration - right.iteration)) {
+    if (iteration.isIncumbentCandidate) {
+      ids.push(iteration.id);
+    }
+    if (iteration.knowledgeAnchorExperimentId) {
+      ids.push(iteration.knowledgeAnchorExperimentId);
+    }
+  }
+
+  return dedupeKnowledgeLinks(resolveKnowledgeExperimentLinks(ids, knowledgeBundle)).sort((left, right) => {
+    const valDelta = compareNullableNumberAsc(left.valBpb, right.valBpb);
+    if (valDelta !== 0) {
+      return valDelta;
+    }
+    return left.experimentId.localeCompare(right.experimentId);
+  });
+}
+
+function buildStrongestCounterexamples(
+  iterations: IterationNode[],
+  sessionKnowledge: SessionKnowledgeSummary | null,
+  knowledgeBundle: KnowledgeBundle,
+): KnowledgeExperimentLink[] {
+  const candidateIds = new Set<string>();
+  const latestAnchorExperimentId =
+    [...iterations]
+      .sort((left, right) => right.iteration - left.iteration)
+      .map((iteration) => iteration.knowledgeAnchorExperimentId)
+      .find((value): value is string => Boolean(value)) ?? sessionKnowledge?.latestAnchorExperimentId ?? null;
+
+  for (const iteration of iterations) {
+    if (iteration.knowledgeOpposingExperimentId) {
+      candidateIds.add(iteration.knowledgeOpposingExperimentId);
+    }
+    for (const opposing of iteration.opposingExperiments) {
+      candidateIds.add(opposing.experimentId);
+    }
+  }
+
+  if (latestAnchorExperimentId) {
+    for (const [experimentId, record] of knowledgeBundle.experimentsById.entries()) {
+      if (asStringArray(record.opposes_experiment_ids).includes(latestAnchorExperimentId)) {
+        candidateIds.add(experimentId);
+      }
+    }
+  }
+
+  return dedupeKnowledgeLinks(resolveKnowledgeExperimentLinks([...candidateIds], knowledgeBundle)).sort((left, right) => {
+    const evidenceDelta = compareNullableNumberDesc(left.evidenceStrength, right.evidenceStrength);
+    if (evidenceDelta !== 0) {
+      return evidenceDelta;
+    }
+    const signalDelta = compareNullableNumberAsc(left.valBpb, right.valBpb);
+    if (signalDelta !== 0) {
+      return signalDelta;
+    }
+    return left.experimentId.localeCompare(right.experimentId);
+  });
 }
 
 function parseRunLogSummary(runLog: string | null): JsonRecord {
@@ -553,7 +853,7 @@ function loadLiveSessionState(sessionDir: string): LiveSessionState | null {
   };
 }
 
-function loadExperimentIteration(sessionId: string, iterationDir: string): IterationNode {
+function loadExperimentIteration(sessionId: string, iterationDir: string, knowledgeBundle: KnowledgeBundle): IterationNode {
   const planPath = path.join(iterationDir, "plan.json");
   const resultPath = path.join(iterationDir, "result.json");
   const actualPath = path.join(iterationDir, "actual", "train.py");
@@ -579,9 +879,16 @@ function loadExperimentIteration(sessionId: string, iterationDir: string): Itera
   );
   const activeTensionIds = asStringArray(plan?.active_tension_ids);
   const metricSource = asRecord(result?.metrics) ?? asRecord(result?.summary) ?? summary ?? parseRunLogSummary(runLog);
+  const experimentId = `${sessionId}:${iterationLabel}`;
+  const knowledgeRecord = knowledgeBundle.experimentsById.get(experimentId) ?? null;
+  const defaultTensionPair = buildKnowledgeTensionPair(asRecord(knowledgeRecord?.default_tension_pair));
+  const knowledgeAnchorExperimentId =
+    asString(knowledgeRecord?.knowledge_anchor_experiment_id) ?? defaultTensionPair?.anchorExperimentId ?? null;
+  const knowledgeOpposingExperimentId =
+    asString(knowledgeRecord?.knowledge_opposing_experiment_id) ?? defaultTensionPair?.opposingExperimentId ?? null;
 
   return {
-    id: `${sessionId}:${iterationLabel}`,
+    id: experimentId,
     iteration: iterationNumber,
     label: iterationLabel,
     source: "experiment_logs",
@@ -608,6 +915,37 @@ function loadExperimentIteration(sessionId: string, iterationDir: string): Itera
     reflectPhase: loadCodexPhaseArtifact(iterationDir, "reflect"),
     tensions,
     transcendent: loadTranscendentArtifact(iterationDir),
+    takeaway: asString(knowledgeRecord?.takeaway),
+    mechanismHypothesis: asString(knowledgeRecord?.mechanism_hypothesis),
+    contradictionClass: asString(knowledgeRecord?.contradiction_class),
+    confidence: asString(knowledgeRecord?.confidence),
+    evidenceStrength: toNumber(knowledgeRecord?.evidence_strength),
+    isIncumbentCandidate: Boolean(knowledgeRecord?.is_incumbent_candidate),
+    incumbentRank: toNumber(knowledgeRecord?.incumbent_rank),
+    axisTags: asStringArray(knowledgeRecord?.axis_tags),
+    mechanismTags: asStringArray(knowledgeRecord?.mechanism_tags),
+    knowledgeRef: asString(knowledgeRecord?.knowledge_ref),
+    knowledgeAnchorExperimentId,
+    knowledgeOpposingExperimentId,
+    knowledgeSelectionReason:
+      asString(knowledgeRecord?.knowledge_selection_reason) ?? defaultTensionPair?.selectionReason ?? null,
+    knowledgeTranscendentPrediction:
+      asString(knowledgeRecord?.knowledge_transcendent_prediction) ?? defaultTensionPair?.transcendentPrediction ?? null,
+    defaultTensionPair,
+    knowledgeAnchor: buildKnowledgeExperimentLink(
+      knowledgeAnchorExperimentId ? knowledgeBundle.experimentsById.get(knowledgeAnchorExperimentId) ?? null : null,
+    ),
+    knowledgeOpposing: buildKnowledgeExperimentLink(
+      knowledgeOpposingExperimentId ? knowledgeBundle.experimentsById.get(knowledgeOpposingExperimentId) ?? null : null,
+    ),
+    supportingExperiments: resolveKnowledgeExperimentLinks(
+      asStringArray(knowledgeRecord?.supports_experiment_ids),
+      knowledgeBundle,
+    ),
+    opposingExperiments: resolveKnowledgeExperimentLinks(
+      asStringArray(knowledgeRecord?.opposes_experiment_ids),
+      knowledgeBundle,
+    ),
     execution: {
       runLog: makeCodeSnapshot("Execution log", "log", runLog, runLogPath),
       liveEvents: makeCodeSnapshot("Structured live telemetry", "log", liveEvents, liveEventsPath),
@@ -623,6 +961,7 @@ function loadExperimentLogSessions(): SessionGraph[] {
   if (!isDirectory(root)) {
     return [];
   }
+  const knowledgeBundle = loadKnowledgeBundle();
 
   return listDirectories(root)
     .map((sessionDir) => {
@@ -634,9 +973,12 @@ function loadExperimentLogSessions(): SessionGraph[] {
       const sessionId = asString(session?.session_id) ?? path.basename(sessionDir);
       const iterationsRoot = path.join(sessionDir, "iterations");
       const iterations = listDirectories(iterationsRoot)
-        .map((iterationDir) => loadExperimentIteration(sessionId, iterationDir))
+        .map((iterationDir) => loadExperimentIteration(sessionId, iterationDir, knowledgeBundle))
         .sort((left, right) => left.iteration - right.iteration);
       const tensions = mergeTensions(iterations);
+      const knowledgeSummary = buildSessionKnowledgeSummary(sessionId, knowledgeBundle);
+      const incumbentLineage = buildIncumbentLineage(iterations, knowledgeBundle);
+      const strongestCounterexamples = buildStrongestCounterexamples(iterations, knowledgeSummary, knowledgeBundle);
 
       return {
         id: sessionId,
@@ -654,6 +996,9 @@ function loadExperimentLogSessions(): SessionGraph[] {
         live: loadLiveSessionState(sessionDir),
         iterations,
         tensions,
+        knowledgeSummary,
+        incumbentLineage,
+        strongestCounterexamples,
         stats: buildStats(iterations, tensions),
       };
     })
@@ -738,13 +1083,32 @@ function loadRunpodSessions(): SessionGraph[] {
           metrics: normalizeMetrics(summary ?? parseRunLogSummary(runLog)),
           actualCode: null,
           diff: null,
-          preparePhase: null,
-          reflectPhase: null,
-          tensions: [],
-          transcendent: null,
-          execution: {
-            runLog: makeCodeSnapshot("Execution log", "log", runLog, runLogPath),
-            liveEvents: null,
+        preparePhase: null,
+        reflectPhase: null,
+        tensions: [],
+        transcendent: null,
+        takeaway: null,
+        mechanismHypothesis: null,
+        contradictionClass: null,
+        confidence: null,
+        evidenceStrength: null,
+        isIncumbentCandidate: false,
+        incumbentRank: null,
+        axisTags: [],
+        mechanismTags: [],
+        knowledgeRef: null,
+        knowledgeAnchorExperimentId: null,
+        knowledgeOpposingExperimentId: null,
+        knowledgeSelectionReason: null,
+        knowledgeTranscendentPrediction: null,
+        defaultTensionPair: null,
+        knowledgeAnchor: null,
+        knowledgeOpposing: null,
+        supportingExperiments: [],
+        opposingExperiments: [],
+        execution: {
+          runLog: makeCodeSnapshot("Execution log", "log", runLog, runLogPath),
+          liveEvents: null,
             summary,
             metadata,
             relayState: null,
@@ -771,6 +1135,9 @@ function loadRunpodSessions(): SessionGraph[] {
         live: null,
         iterations,
         tensions,
+        knowledgeSummary: null,
+        incumbentLineage: [],
+        strongestCounterexamples: [],
         stats: buildStats(iterations, tensions),
       };
     })

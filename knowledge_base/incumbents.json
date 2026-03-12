@@ -1,0 +1,26 @@
+{
+  "best_kept": null,
+  "best_per_axis": {},
+  "best_per_session": {
+    "codex-transcendent-fn-mar12-0755": {
+      "confidence": "moderate",
+      "corroboration_count": 0,
+      "experiment_id": "codex-transcendent-fn-mar12-0755:001",
+      "knowledge_ref": "knowledge_base/experiments/codex-transcendent-fn-mar12-0755/001.json",
+      "val_bpb": 0.996233
+    }
+  },
+  "generated_at": "2026-03-12T21:00:13Z",
+  "global_best": {
+    "adjusted_incumbent_score": 0.996433,
+    "confidence": "moderate",
+    "corroboration_count": 0,
+    "experiment_id": "codex-transcendent-fn-mar12-0755:001",
+    "iteration": 1,
+    "knowledge_ref": "knowledge_base/experiments/codex-transcendent-fn-mar12-0755/001.json",
+    "session_id": "codex-transcendent-fn-mar12-0755",
+    "takeaway": "Completed run reached val_bpb 0.996233.",
+    "val_bpb": 0.996233
+  },
+  "schema_version": 1
+}

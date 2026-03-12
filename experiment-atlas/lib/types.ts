@@ -78,6 +78,52 @@ export type ExecutionArtifacts = {
   relayState: Record<string, unknown> | null;
 };
 
+export type KnowledgeExperimentLink = {
+  experimentId: string;
+  sessionId: string;
+  iteration: number;
+  iterationLabel: string;
+  branch: string | null;
+  title: string | null;
+  sessionPath: string | null;
+  sourceIterationPath: string | null;
+  knowledgeRef: string | null;
+  valBpb: number | null;
+  keepDiscardStatus: string | null;
+  outcome: string | null;
+  takeaway: string | null;
+  confidence: string | null;
+  evidenceStrength: number | null;
+  axisTags: string[];
+  mechanismTags: string[];
+};
+
+export type KnowledgeTensionPair = {
+  anchorExperimentId: string | null;
+  opposingExperimentId: string | null;
+  selectionReason: string | null;
+  sharedAxes: string[];
+  opposedAxes: string[];
+  relevanceScore: number | null;
+  oppositionScore: number | null;
+  totalScore: number | null;
+  transcendentPrediction: string | null;
+};
+
+export type SessionKnowledgeSummary = {
+  bestExperimentId: string | null;
+  bestValBpb: number | null;
+  latestAnchorExperimentId: string | null;
+  latestOpposingExperimentId: string | null;
+  defaultTensionPairCount: number | null;
+  defaultTensionPairsWithOpposition: number | null;
+  sourceSessionPath: string | null;
+  bestExperiment: KnowledgeExperimentLink | null;
+  latestAnchor: KnowledgeExperimentLink | null;
+  latestOpposing: KnowledgeExperimentLink | null;
+  raw: Record<string, unknown> | null;
+};
+
 export type IterationNode = {
   id: string;
   iteration: number;
@@ -106,6 +152,25 @@ export type IterationNode = {
   reflectPhase: CodexPhaseArtifact | null;
   tensions: TensionNode[];
   transcendent: TranscendentArtifact | null;
+  takeaway: string | null;
+  mechanismHypothesis: string | null;
+  contradictionClass: string | null;
+  confidence: string | null;
+  evidenceStrength: number | null;
+  isIncumbentCandidate: boolean;
+  incumbentRank: number | null;
+  axisTags: string[];
+  mechanismTags: string[];
+  knowledgeRef: string | null;
+  knowledgeAnchorExperimentId: string | null;
+  knowledgeOpposingExperimentId: string | null;
+  knowledgeSelectionReason: string | null;
+  knowledgeTranscendentPrediction: string | null;
+  defaultTensionPair: KnowledgeTensionPair | null;
+  knowledgeAnchor: KnowledgeExperimentLink | null;
+  knowledgeOpposing: KnowledgeExperimentLink | null;
+  supportingExperiments: KnowledgeExperimentLink[];
+  opposingExperiments: KnowledgeExperimentLink[];
   execution: ExecutionArtifacts;
 };
 
@@ -195,5 +260,8 @@ export type SessionGraph = {
   live: LiveSessionState | null;
   iterations: IterationNode[];
   tensions: TensionNode[];
+  knowledgeSummary: SessionKnowledgeSummary | null;
+  incumbentLineage: KnowledgeExperimentLink[];
+  strongestCounterexamples: KnowledgeExperimentLink[];
   stats: SessionStats;
 };

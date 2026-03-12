@@ -1,0 +1,21 @@
+{
+  "antithesis_source": {
+    "type": "inline"
+  },
+  "antithesis_summary": "Spend more of the budget on depth even if that lowers throughput.",
+  "antithesis_train_py": "iterations/001/tensions/capacity-vs-throughput/antithesis/train.py",
+  "created_in_iteration": 1,
+  "favored_side": "thesis",
+  "id": "capacity-vs-throughput",
+  "kind": "capacity-vs-throughput",
+  "label": "Capacity vs throughput",
+  "schema_version": 1,
+  "thesis_source": {
+    "path": "train.py",
+    "type": "current"
+  },
+  "thesis_summary": "Keep DEPTH at 8 with aspect-ratio sizing so the run maximizes tokens processed and optimizer updates.",
+  "thesis_train_py": "iterations/001/tensions/capacity-vs-throughput/thesis/train.py",
+  "updated_in_iteration": 1,
+  "why_active": "The fixed 300-second budget rewards step count, but the current roughly 50M-parameter model may still be under-capacity for ClimbMix."
+}

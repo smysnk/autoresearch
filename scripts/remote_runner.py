@@ -31,6 +31,7 @@ from codex_agent import (
     phase_output_paths,
     run_codex_phase,
 )
+from knowledge_base import rebuild_knowledge_base, seed_state_with_knowledge_suggestion
 
 
 DEFAULT_ENV_PATH = ".env"
@@ -436,6 +437,13 @@ def run_command(cfg: RemoteConfig, args: argparse.Namespace) -> int:
     manifest = json.loads(session_log.manifest_path.read_text())
     next_experiment_index = int(manifest.get("latest_iteration") or 0) + 1
     baseline_run = not bool(manifest.get("iterations", []))
+    knowledge_summary = rebuild_knowledge_base(
+        cfg.repo_root,
+        cfg.repo_root / "knowledge_base",
+        suggestion_session_id=session_log.session_id,
+    )
+    knowledge_suggestion = knowledge_summary.get("prepare_suggestion")
+    seed_state_with_knowledge_suggestion(codex_cfg.state_path, knowledge_suggestion)
     prepare_log_path, prepare_output_path = phase_output_paths(
         repo_root=cfg.repo_root,
         session_id=session_log.session_id,
@@ -452,6 +460,7 @@ def run_command(cfg: RemoteConfig, args: argparse.Namespace) -> int:
         log_path=prepare_log_path,
         output_path=prepare_output_path,
         baseline_run=baseline_run,
+        knowledge_suggestion=knowledge_suggestion,
     )
     parent_commit = git_stdout(cfg.repo_root, ["rev-parse", "--short", "HEAD"])
     pre_commit = commit_nonignored_changes(
@@ -570,6 +579,11 @@ export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
             summary=summary,
             status="completed",
         )
+        rebuild_knowledge_base(
+            cfg.repo_root,
+            cfg.repo_root / "knowledge_base",
+            suggestion_session_id=session_log.session_id,
+        )
         print_summary(summary)
         print(f"archive_log: {archive_path}")
         post_commit = commit_nonignored_changes(
@@ -591,6 +605,11 @@ export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
         exit_code=result.returncode,
         summary=summary,
         status="failed",
+    )
+    rebuild_knowledge_base(
+        cfg.repo_root,
+        cfg.repo_root / "knowledge_base",
+        suggestion_session_id=session_log.session_id,
     )
     post_commit = commit_nonignored_changes(
         cfg.repo_root,

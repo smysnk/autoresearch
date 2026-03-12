@@ -43,6 +43,7 @@ from codex_agent import (
     phase_output_paths,
     run_codex_phase,
 )
+from knowledge_base import rebuild_knowledge_base, seed_state_with_knowledge_suggestion
 from live_monitor import capture_codex_phase_artifacts, snapshot_phase_inputs
 
 
@@ -1820,6 +1821,17 @@ def execute_on_pod(
             status="completed" if exit_code == 0 else "failed",
         )
         finalized_iteration = True
+        knowledge_summary = rebuild_knowledge_base(
+            repo_root,
+            repo_root / "knowledge_base",
+            suggestion_session_id=session_log.session_id,
+        )
+        append_log(
+            log_path,
+            "knowledge base rebuilt after reflect: "
+            f"records={knowledge_summary.get('record_count')} "
+            f"pairs={knowledge_summary.get('tension_pair_count')}",
+        )
         post_commit = commit_nonignored_changes(
             repo_root,
             f"experiment {experiment_index:03d}: complete Runpod run on {branch} (val_bpb {summary.get('val_bpb', 'unknown')})",
@@ -1861,6 +1873,11 @@ def execute_on_pod(
                 summary=summary,
                 status="failed",
             )
+            rebuild_knowledge_base(
+                repo_root,
+                repo_root / "knowledge_base",
+                suggestion_session_id=session_log.session_id,
+            )
 
 
 def execute(args: argparse.Namespace) -> int:
@@ -1894,6 +1911,13 @@ def execute(args: argparse.Namespace) -> int:
             baseline_run = not bool(manifest.get("iterations", []))
             session_iteration = int(manifest.get("latest_iteration") or 0) + 1
             iteration_label = f"{session_iteration:03d}"
+            knowledge_summary = rebuild_knowledge_base(
+                repo_root,
+                repo_root / "knowledge_base",
+                suggestion_session_id=session_log.session_id,
+            )
+            knowledge_suggestion = knowledge_summary.get("prepare_suggestion")
+            seed_state_with_knowledge_suggestion(codex_cfg.state_path, knowledge_suggestion)
             write_live_state(
                 session_log,
                 build_live_state_payload(
@@ -1936,6 +1960,7 @@ def execute(args: argparse.Namespace) -> int:
                 log_path=prepare_log_path,
                 output_path=prepare_output_path,
                 baseline_run=baseline_run,
+                knowledge_suggestion=knowledge_suggestion,
             )
             prepare_live_dir = live_phase_dir(session_log, iteration_label=iteration_label, phase="prepare")
             prepare_manifest = capture_codex_phase_artifacts(

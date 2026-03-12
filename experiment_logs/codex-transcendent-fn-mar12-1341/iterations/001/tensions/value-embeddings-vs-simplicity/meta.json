@@ -1,0 +1,21 @@
+{
+  "antithesis_source": {
+    "type": "inline"
+  },
+  "antithesis_summary": "Remove value embeddings entirely and rely on plain attention/residual structure.",
+  "antithesis_train_py": "iterations/001/tensions/value-embeddings-vs-simplicity/antithesis/train.py",
+  "created_in_iteration": 1,
+  "favored_side": "thesis",
+  "id": "value-embeddings-vs-simplicity",
+  "kind": "novelty-vs-simplicity",
+  "label": "Value embeddings vs simplicity",
+  "schema_version": 1,
+  "thesis_source": {
+    "path": "train.py",
+    "type": "current"
+  },
+  "thesis_summary": "Keep alternating value embeddings because they may improve information flow without paying for full extra layers.",
+  "thesis_train_py": "iterations/001/tensions/value-embeddings-vs-simplicity/thesis/train.py",
+  "updated_in_iteration": 1,
+  "why_active": "Alternating value embeddings and gates add parameters, memory, and implementation surface; they may help routing, or they may just be a costly flourish in a short run."
+}

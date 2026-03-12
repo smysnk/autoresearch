@@ -98,6 +98,7 @@ def build_codex_phase_prompt(
     experiment_index: int,
     phase: str,
     baseline_run: bool,
+    knowledge_suggestion: dict[str, object] | None = None,
     run_log_path: Path | None = None,
     summary_path: Path | None = None,
     execution_dir: Path | None = None,
@@ -145,6 +146,38 @@ def build_codex_phase_prompt(
                 [
                     "- Use the latest local session logs and reports to choose the next move.",
                     "- Preserve the Jungian method: active tensions, contradiction tracking, and a concrete transcendent-function candidate when appropriate.",
+                ]
+            )
+        if knowledge_suggestion is not None:
+            lines.extend(
+                [
+                    "",
+                    "Knowledge-base suggestion for this prepare step:",
+                    f"- Anchor experiment: {knowledge_suggestion.get('anchor_experiment_id') or 'none available yet'}",
+                ]
+            )
+            anchor_val_bpb = knowledge_suggestion.get("anchor_val_bpb")
+            if anchor_val_bpb is not None:
+                lines.append(f"- Anchor val_bpb: {anchor_val_bpb}")
+            anchor_takeaway = knowledge_suggestion.get("anchor_takeaway")
+            if anchor_takeaway:
+                lines.append(f"- Anchor takeaway: {anchor_takeaway}")
+            lines.append(
+                f"- Suggested opposing experiment: {knowledge_suggestion.get('opposing_experiment_id') or 'no credible opposite found yet'}"
+            )
+            opposing_takeaway = knowledge_suggestion.get("opposing_takeaway")
+            if opposing_takeaway:
+                lines.append(f"- Opposing takeaway: {opposing_takeaway}")
+            selection_reason = knowledge_suggestion.get("selection_reason")
+            if selection_reason:
+                lines.append(f"- Why this pair: {selection_reason}")
+            transcendent_prediction = knowledge_suggestion.get("transcendent_prediction")
+            if transcendent_prediction:
+                lines.append(f"- Suggested transcendent move: {transcendent_prediction}")
+            lines.extend(
+                [
+                    "- Carry the chosen historical pair into the state file using knowledge_anchor_experiment_id, knowledge_opposing_experiment_id, knowledge_selection_reason, and knowledge_transcendent_prediction.",
+                    "- You may override the suggested opposing experiment, but if you do, update those fields to match your chosen pair and explain why in the state.",
                 ]
             )
         lines.extend(
@@ -195,6 +228,7 @@ def run_codex_phase(
     log_path: Path,
     output_path: Path,
     baseline_run: bool = False,
+    knowledge_suggestion: dict[str, object] | None = None,
     run_log_path: Path | None = None,
     summary_path: Path | None = None,
     execution_dir: Path | None = None,
@@ -209,6 +243,7 @@ def run_codex_phase(
         experiment_index=experiment_index,
         phase=phase,
         baseline_run=baseline_run,
+        knowledge_suggestion=knowledge_suggestion,
         run_log_path=run_log_path,
         summary_path=summary_path,
         execution_dir=execution_dir,
